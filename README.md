@@ -13,6 +13,8 @@ El Manejador de Base de Datos Comercial busca construir y mantener una base maes
 
 La misión, la visión y la estrategia funcional del sistema se detallan en [Visión del proyecto](docs/PROJECT_VISION.md).
 
+La próxima etapa de análisis está documentada en [Diseño de la base maestra de productos](docs/MASTER_PRODUCTS_SCHEMA_PLAN.md).
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
