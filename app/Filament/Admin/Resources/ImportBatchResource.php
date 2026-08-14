@@ -20,7 +20,7 @@ class ImportBatchResource extends Resource
 {
     protected static ?string $model = ImportBatch::class;
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
 
     protected static ?string $navigationLabel = 'Lotes de Importación';
 
@@ -56,7 +56,7 @@ class ImportBatchResource extends Resource
                     ->searchable()
                     ->preload(),
                 DateTimePicker::make('started_at')->label('Inicio'),
-                DateTimePicker::make('finished_at')->label('Finalización'),
+                DateTimePicker::make('finished_at')->label('Finalización')->afterOrEqual('started_at'),
                 Textarea::make('notes')->label('Notas')->columnSpanFull(),
             ])
             ->columns(2);

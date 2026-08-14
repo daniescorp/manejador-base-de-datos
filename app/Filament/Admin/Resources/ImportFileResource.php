@@ -19,7 +19,7 @@ class ImportFileResource extends Resource
 {
     protected static ?string $model = ImportFile::class;
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
 
     protected static ?string $navigationLabel = 'Archivos Importados';
 
@@ -46,9 +46,9 @@ class ImportFileResource extends Resource
                 TextInput::make('file_type')->label('Tipo de archivo')->maxLength(255),
                 TextInput::make('delimiter')->label('Delimitador')->maxLength(255),
                 TextInput::make('encoding')->label('Codificación')->maxLength(255),
-                TextInput::make('total_rows')->label('Filas totales')->numeric()->default(0)->required(),
-                TextInput::make('valid_rows')->label('Filas válidas')->numeric()->default(0)->required(),
-                TextInput::make('error_rows')->label('Filas con error')->numeric()->default(0)->required(),
+                TextInput::make('total_rows')->label('Filas totales')->integer()->minValue(0)->default(0)->required(),
+                TextInput::make('valid_rows')->label('Filas válidas')->integer()->minValue(0)->default(0)->required(),
+                TextInput::make('error_rows')->label('Filas con error')->integer()->minValue(0)->default(0)->required(),
                 KeyValue::make('meta')->label('Metadatos')->columnSpanFull(),
             ])
             ->columns(2);

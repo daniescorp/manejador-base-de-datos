@@ -10,16 +10,18 @@ use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Validation\Rules\Unique;
 
 class ImportRowResource extends Resource
 {
     protected static ?string $model = ImportRow::class;
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
 
     protected static ?string $navigationLabel = 'Filas Importadas';
 
@@ -45,7 +47,18 @@ class ImportRowResource extends Resource
                     ->searchable()
                     ->preload()
                     ->required(),
-                TextInput::make('row_number')->label('Número de fila')->numeric()->required(),
+                TextInput::make('row_number')
+                    ->label('Número de fila')
+                    ->integer()
+                    ->minValue(0)
+                    ->unique(
+                        table: 'import_rows',
+                        column: 'row_number',
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn (Unique $rule, Get $get): Unique => $rule
+                            ->where('import_file_id', $get('import_file_id')),
+                    )
+                    ->required(),
                 Select::make('status')
                     ->label('Estado')
                     ->options([

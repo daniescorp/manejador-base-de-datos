@@ -20,7 +20,7 @@ class ExportJobResource extends Resource
 {
     protected static ?string $model = ExportJob::class;
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
 
     protected static ?string $navigationLabel = 'Exportaciones';
 
@@ -59,14 +59,14 @@ class ExportJobResource extends Resource
                     ->default('draft')
                     ->required(),
                 TextInput::make('file_path')->label('Ruta del archivo')->maxLength(255),
-                TextInput::make('rows_count')->label('Cantidad de filas')->numeric()->default(0)->required(),
+                TextInput::make('rows_count')->label('Cantidad de filas')->integer()->minValue(0)->default(0)->required(),
                 Select::make('created_by_id')
                     ->label('Creado por')
                     ->relationship('createdBy', 'name')
                     ->searchable()
                     ->preload(),
                 DateTimePicker::make('started_at')->label('Inicio'),
-                DateTimePicker::make('finished_at')->label('Finalización'),
+                DateTimePicker::make('finished_at')->label('Finalización')->afterOrEqual('started_at'),
                 KeyValue::make('meta')->label('Metadatos')->columnSpanFull(),
             ])
             ->columns(2);
