@@ -86,6 +86,10 @@ Flujo de corrección:
 
 Ya existe un servicio inicial que analiza filas de *staging* y genera `normalization_suggestions` desde reglas activas de `normalization_rules`. En esta etapa solo crea propuestas revisables: no modifica productos maestros, no aplica correcciones y no registra cambios como aprobados.
 
+### Servicio inicial de composición de previsualización
+
+El sistema cuenta con un servicio que combina las sugerencias aplicables en `product_staging_rows.normalized_preview` sin aprobarlas ni modificar productos maestros. Las sugerencias sensibles quedan identificadas como bloqueadas, de revisión manual o sin cambio dentro de la previsualización.
+
 Ejemplo:
 
 ```text
@@ -195,6 +199,7 @@ Son reglas o casos sensibles, entre otros:
 - `pending`;
 - `analyzed`;
 - `suggested`;
+- `previewed`;
 - `approved`;
 - `rejected`;
 - `imported_to_master`;
