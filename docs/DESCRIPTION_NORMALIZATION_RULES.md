@@ -8,6 +8,10 @@ El asistente podrá ayudar a detectar patrones y proponer reglas, pero el usuari
 
 Las reglas de normalización no modifican directamente el dato original. Se aplican sobre campos homologados o de salida después de la previsualización y aprobación del usuario, y el sistema debe registrar cada cambio aplicado.
 
+## Seeder inicial de reglas confirmadas
+
+Las reglas confirmadas cuentan con el seeder idempotente `NormalizationRuleSeeder`, destinado a poblar el catálogo inicial de `normalization_rules` sin duplicar ni eliminar reglas existentes. Esta carga solo registra reglas disponibles: no las aplica sobre productos ni reemplaza la previsualización y aprobación del usuario.
+
 ## Uso futuro de IA en normalización
 
 La IA podrá ayudar a detectar y sugerir normalizaciones, pero las reglas confirmadas por el usuario y la previsualización tendrán prioridad. La IA no deberá aplicar cambios automáticos sobre `descripcion_catalogo` sin aprobación.
