@@ -86,6 +86,12 @@ Flujo de corrección:
 
 Ya existe un servicio inicial que analiza filas de *staging* y genera `normalization_suggestions` desde reglas activas de `normalization_rules`. En esta etapa solo crea propuestas revisables: no modifica productos maestros, no aplica correcciones y no registra cambios como aprobados.
 
+### Diccionario de Normalización
+
+El panel Filament permite crear, consultar, editar, activar y desactivar reglas del Diccionario de Normalización para `descripcion_catalogo` y `marca_homologada`. No ofrece borrado ni borrado masivo, conserva la autoría de creación y actualización, y permite registrar reglas como `MX` → `MAX`, `ARLISTAN` → `Arlistán` o `MANON` → `Manón` con previsualización y revisión.
+
+`ProductStagingAnalyzer` analiza actualmente `descripcion_catalogo` a partir de `nombre_sku_original`; la aplicación automática de reglas dirigidas a `marca_homologada` queda pendiente para un bloque futuro de **homologación de marcas**. En ese bloque, `marca_original` deberá conservarse intacta, `marca_homologada` guardará la escritura final y las marcas deberán tratarse de forma diferenciada respecto de las palabras comunes.
+
 ### Servicio inicial de composición de previsualización
 
 El sistema cuenta con un servicio que combina las sugerencias aplicables en `product_staging_rows.normalized_preview` sin aprobarlas ni modificar productos maestros. Las sugerencias sensibles quedan identificadas como bloqueadas, de revisión manual o sin cambio dentro de la previsualización.
@@ -502,7 +508,7 @@ Cada salida se genera desde datos estructurados y plantillas de exportación esp
 6. Crear `product_change_logs`.
 7. Continuar la evolución funcional de `master_products`; reconsiderar una tabla nueva solo ante una razón técnica fuerte.
 8. Crear recursos Filament para revisar *staging*.
-9. Crear recursos Filament para administrar reglas.
+9. Ampliar el Diccionario de Normalización y su integración con nuevos campos cuando corresponda.
 10. Crear la previsualización por lote.
 11. Crear la aprobación por lote.
 12. Crear plantillas de exportación por destino.
