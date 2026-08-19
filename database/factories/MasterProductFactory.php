@@ -21,6 +21,12 @@ class MasterProductFactory extends Factory
             'status' => 'active',
             'source_reference' => null,
             'data' => ['source' => 'test'],
+            'codigo_producto' => fake()->bothify('COD-#####'),
+            'nombre_original' => fake()->words(4, true),
+            'descripcion_catalogo' => fake()->words(4, true),
+            'marca_original' => fake()->company(),
+            'marca_homologada' => fake()->company(),
+            'estado_homologacion' => 'pendiente_revision',
         ];
     }
 }

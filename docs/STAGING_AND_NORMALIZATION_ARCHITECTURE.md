@@ -1,6 +1,6 @@
 # Arquitectura de staging, normalización y productos maestros v2
 
-Este documento describe una arquitectura técnica futura. No autoriza todavía migraciones, cambios de modelos, recursos Filament, importadores ni modificaciones de base de datos.
+Este documento describe la arquitectura técnica y su evolución incremental. Las etapas ya implementadas se identifican expresamente; las restantes no autorizan por sí solas migraciones, recursos Filament, importadores ni cambios de base de datos.
 
 El sistema necesita una arquitectura por capas:
 
@@ -210,9 +210,11 @@ Esta tabla no es la base maestra. Es una zona de *staging* y análisis en la que
 
 Los campos `import_batch_id` e `import_file_id` referencian las tablas existentes `import_batches` e `import_files`, que representan respectivamente el lote y la metadata del archivo importado. El archivo administrado debe permanecer en almacenamiento operativo externo al repositorio.
 
-## Evolución futura de master_products (v2)
+## Evolución de master_products (v2)
 
 “Productos maestros v2” será la evolución lógica de la tabla física existente `master_products`, que continuará como única base maestra recomendada. No se creará por defecto una tabla física `master_products_v2`; solo se reconsiderará si aparece una razón técnica fuerte durante el diseño de migraciones. La evolución deberá separar los datos originales, los homologados y los destinados a cada salida.
+
+La primera ampliación estructural v2 ya incorporó campos mínimos originales, homologados, de salida y control sobre `master_products`, conservando los campos heredados. No se realizó *backfill*, no se duplicó la tabla y `codigo_producto` continúa sin unicidad definitiva.
 
 ### Identificación
 
@@ -498,7 +500,7 @@ Cada salida se genera desde datos estructurados y plantillas de exportación esp
 4. Crear `normalization_rules`.
 5. Crear `normalization_suggestions`.
 6. Crear `product_change_logs`.
-7. Evolucionar `master_products` con los campos v2; reconsiderar una tabla nueva solo ante una razón técnica fuerte.
+7. Continuar la evolución funcional de `master_products`; reconsiderar una tabla nueva solo ante una razón técnica fuerte.
 8. Crear recursos Filament para revisar *staging*.
 9. Crear recursos Filament para administrar reglas.
 10. Crear la previsualización por lote.

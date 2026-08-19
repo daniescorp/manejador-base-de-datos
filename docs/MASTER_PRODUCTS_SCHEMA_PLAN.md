@@ -359,6 +359,8 @@ La evolución física recomendada es extender `master_products` como tabla maest
 
 Se adopta `codigo_producto` como nombre funcional. Los campos heredados de `master_products` no se eliminarán inicialmente: la evolución será incremental y las sugerencias se gestionarán por campo y por regla.
 
+La primera ampliación estructural v2 ya agregó a `master_products` los campos mínimos originales, homologados, de salida y control, manteniendo los campos heredados y sin crear una tabla `master_products_v2`. Esta etapa no realiza *backfill* ni impone unicidad sobre `codigo_producto`.
+
 ## Orden recomendado
 
 1. Analizar la base maestra real.

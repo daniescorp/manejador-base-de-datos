@@ -1,6 +1,6 @@
 # Estrategia física de base de datos
 
-Este documento define cómo llevar la arquitectura lógica a tablas reales de MySQL en una etapa futura. No implementa migraciones, modelos, recursos Filament ni cambios de base de datos; solamente establece la estrategia y el orden recomendado.
+Este documento define cómo llevar la arquitectura lógica a tablas reales de MySQL mediante etapas incrementales. Algunas etapas iniciales ya cuentan con implementación; las restantes conservan el orden y las condiciones de seguridad aquí documentadas.
 
 ## Decisión sobre master_products_v2
 
@@ -235,7 +235,7 @@ Cuando se implemente, Filament deberá permitir:
 
 Estas pantallas y recursos no se implementan en esta etapa.
 
-## Evolución futura de master_products
+## Evolución incremental de master_products
 
 La tabla `master_products` actual es flexible, pero insuficiente para representar por separado datos originales, homologados, control editorial y salidas por destino.
 
@@ -312,7 +312,11 @@ La tabla `master_products` actual es flexible, pero insuficiente para representa
 - `approved_by_id`;
 - `approved_at`.
 
-No todos estos campos deben incorporarse en una sola migración. La evolución puede dividirse por etapas funcionales, manteniendo compatibilidad y respaldo de los datos existentes.
+### Estado actual de la ampliación v2
+
+La primera ampliación estructural v2 de `master_products` incorporó estos campos originales, homologados, de salida y control mediante una migración incremental. Se conservaron los campos heredados por compatibilidad, no se creó una tabla `master_products_v2`, no se realizó *backfill* y `codigo_producto` permanece sin unicidad hasta resolver los duplicados en *staging*.
+
+Esta etapa solo agrega capacidad estructural. La carga, homologación, aprobación y aplicación de datos continuarán en etapas funcionales posteriores.
 
 ## Clave funcional
 
@@ -423,7 +427,7 @@ Este orden es solamente una guía para una etapa posterior; no autoriza implemen
 4. Crear `product_change_logs`.
 5. Crear `export_templates`.
 6. Crear `export_template_fields`.
-7. Evolucionar `master_products` con los campos del concepto v2.
+7. Continuar la evolución de `master_products` con las etapas funcionales del concepto v2.
 8. Agregar índices y restricciones.
 9. Crear recursos Filament.
 10. Crear servicios de análisis y previsualización.
