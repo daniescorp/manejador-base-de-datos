@@ -29,6 +29,14 @@ Los archivos administrativos diarios mandan en:
 
 La integración entre ambas fuentes debe preservar el contenido homologado y actualizar solamente la información operativa que corresponda a cada proceso.
 
+## Código de producto como clave operativa
+
+Marketing recibe la información por CODIGO. En la base recibida `SKU Daniel 8mil(1).xlsx`, la columna `Sku` representa ese CODIGO DEL PRODUCTO y no un SKU comercial separado.
+
+El sistema deberá mapear `Sku` → `codigo_producto`. `codigo_producto` será la clave funcional principal para cotejar la base maestra contra los archivos administrativos y ejecutar los procesos de Marketing. No se debe depender de `Ean` ni de `Nombre Sku` para cruzar información: `Ean` queda como dato secundario validable y `Nombre Sku` como descripción o nombre original administrativo. `Marca` tampoco constituye una clave.
+
+Los valores duplicados de `codigo_producto` detectados en *staging* deben resolverse antes de consolidar la base maestra activa e imponer una restricción de unicidad definitiva. Hasta completar esa depuración, la base semilla no debe asumirse única por CODIGO/SKU.
+
 ## Saneamiento y homologación masiva
 
 La base maestra puede contener aproximadamente 8.000 productos con errores o inconsistencias en descripciones, gramajes, abreviaturas, ortografía, categorías, marcas y formatos. Por esa escala, el proceso no debe depender de corregir producto por producto.
@@ -98,9 +106,9 @@ Los siguientes campos son candidatos de análisis, no una definición final del 
 
 ### Identificación
 
-- `codigo`;
-- `sku`;
-- `ean` o código de barras;
+- `codigo_producto`, mapeado desde la columna `Sku` del archivo y recomendado como clave funcional principal;
+- `sku_original` o `codigo_original`, si se desea conservar el nombre o valor tal como fue recibido;
+- `ean` o código de barras, como dato secundario validable;
 - código de proveedor;
 - estado.
 
@@ -161,7 +169,7 @@ Los siguientes campos son candidatos de análisis, no una definición final del 
 
 Estas reglas se definirán cuando se analice la base maestra real:
 
-1. Campo clave principal para el cotejo.
+1. Criterio para resolver en *staging* los duplicados de `codigo_producto` antes de imponer unicidad definitiva.
 2. Campos obligatorios.
 3. Campos opcionales.
 4. Campos que pueden actualizarse desde Administración.

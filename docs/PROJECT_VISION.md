@@ -29,6 +29,8 @@ La responsabilidad sobre los datos se divide de la siguiente manera:
 
 Esta separación protege la calidad de la información maestra sin perder la vigencia de los datos operativos diarios.
 
+El CODIGO DEL PRODUCTO será la clave operativa principal para cotejar archivos diarios y procesos de Marketing. En los archivos base recibidos este dato puede aparecer bajo la columna `Sku`.
+
 Los productos con datos operativos incompletos, como `UXB = 0`, deben conservarse para su revisión, pero permanecer fuera de los procesos activos y las exportaciones hasta que el dato sea corregido.
 
 ## Escala y estrategia de saneamiento
