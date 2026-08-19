@@ -79,6 +79,19 @@ El saneamiento debe poder organizarse por tandas, filtros y estados. También de
 
 Estos campos, estados y tablas son alternativas para el análisis futuro; no constituyen todavía una definición del esquema ni implican implementar lógica de homologación en esta etapa.
 
+## Regla inicial para UXB = 0
+
+La base maestra real analizada contiene aproximadamente 8.815 registros y cerca de 1.265 productos con `UXB = 0`. Por decisión funcional, estos productos no serán tomados por ahora como productos activos del sistema, pero tampoco deben eliminarse.
+
+Los registros con `UXB = 0` deben conservarse como pendientes de revisión, con el estado sugerido `pendiente_uxb`. Mientras mantengan ese valor, deben quedar excluidos de la base maestra activa inicial y no deben exportarse a Adobe InDesign, Shopify, la futura aplicación móvil ni los reportes operativos.
+
+Estos productos podrán incorporarse más adelante cuando Administración o el área correspondiente corrija el dato `UXB`. En una futura importación o etapa de *staging*, deberán conservarse con todos sus datos originales para permitir su trazabilidad, revisión y posterior incorporación sin pérdida de información.
+
+### Estrategia de carga inicial
+
+- `UXB` mayor a `0`: candidato a producto maestro activo.
+- `UXB` igual a `0`: pendiente de revisión, excluido temporalmente de procesos y exportaciones.
+
 ## Campos a analizar cuando se reciba la base maestra real
 
 Los siguientes campos son candidatos de análisis, no una definición final del esquema.

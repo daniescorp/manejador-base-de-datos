@@ -29,6 +29,8 @@ La responsabilidad sobre los datos se divide de la siguiente manera:
 
 Esta separación protege la calidad de la información maestra sin perder la vigencia de los datos operativos diarios.
 
+Los productos con datos operativos incompletos, como `UXB = 0`, deben conservarse para su revisión, pero permanecer fuera de los procesos activos y las exportaciones hasta que el dato sea corregido.
+
 ## Escala y estrategia de saneamiento
 
 El saneamiento de una base de aproximadamente 8.000 productos debe ser masivo, progresivo y controlado. El sistema debe evitar que la calidad de los datos dependa de corregir manualmente cada producto de forma aislada y debe permitir trabajar por tandas, filtros, estados y patrones repetidos.
