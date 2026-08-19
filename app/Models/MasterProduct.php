@@ -40,4 +40,19 @@ class MasterProduct extends Model
     {
         return $this->hasMany(ValidationError::class);
     }
+
+    public function productStagingRows(): HasMany
+    {
+        return $this->hasMany(ProductStagingRow::class);
+    }
+
+    public function normalizationSuggestions(): HasMany
+    {
+        return $this->hasMany(NormalizationSuggestion::class);
+    }
+
+    public function changeLogs(): HasMany
+    {
+        return $this->hasMany(ProductChangeLog::class);
+    }
 }

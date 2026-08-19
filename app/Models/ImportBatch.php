@@ -45,6 +45,16 @@ class ImportBatch extends Model
         return $this->hasMany(ValidationError::class);
     }
 
+    public function productStagingRows(): HasMany
+    {
+        return $this->hasMany(ProductStagingRow::class);
+    }
+
+    public function productChangeLogs(): HasMany
+    {
+        return $this->hasMany(ProductChangeLog::class);
+    }
+
     public function products(): HasMany
     {
         return $this->hasMany(MasterProduct::class, 'last_import_batch_id');

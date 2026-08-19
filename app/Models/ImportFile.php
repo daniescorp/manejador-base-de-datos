@@ -45,4 +45,9 @@ class ImportFile extends Model
     {
         return $this->hasMany(ValidationError::class);
     }
+
+    public function productStagingRows(): HasMany
+    {
+        return $this->hasMany(ProductStagingRow::class);
+    }
 }
