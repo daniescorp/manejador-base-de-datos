@@ -91,7 +91,7 @@ El saneamiento debe poder organizarse por tandas, filtros y estados. También de
 - `categories`;
 - `product_prices`;
 - `product_images`;
-- `product_audit_logs`.
+- `product_change_logs`.
 
 Estos campos, estados y tablas son alternativas para el análisis futuro; no constituyen todavía una definición del esquema ni implican implementar lógica de homologación en esta etapa.
 
@@ -155,6 +155,20 @@ La medida normalizada deberá alimentar de forma consistente:
 - `descripcion_catalogo`;
 - `titulo_shopify`;
 - la futura aplicación móvil o API.
+
+### Presentaciones de papel para catálogo
+
+Las abreviaturas `HS`, `DH` y `TH` podrán homologarse respectivamente como Hoja Simple, Doble Hoja y Triple Hoja únicamente cuando el contexto corresponda a papel higiénico o productos de papel. En `descripcion_catalogo`, los packs deberán admitir un formato compacto como `4x30MT`, mientras los valores de cantidad, medida y unidad normalizada se conservan en campos estructurados separados. Las reglas completas se detallan en [Reglas de normalización de descripciones](DESCRIPTION_NORMALIZATION_RULES.md).
+
+El diccionario de homologación ya contempla reglas confirmadas para abreviaturas con `/`, sabores y variantes, abreviaturas con punto y excepciones como `CHAMP.`, `T.FEMENINA`, `T.HUMEDAS` y `DESM.`. Los rangos, medidas o formatos comerciales que contienen `/` no deben modificarse automáticamente.
+
+`RELL.` queda excluida de las correcciones automáticas: debe marcarse como `requiere_revision`, conservarse en el dato original y corregirse solamente mediante revisión individual, sin aplicación por lote.
+
+### Separación de marca y descripción por destino
+
+El esquema deberá separar `marca_original`, `marca_homologada`, `nombre_original`, `nombre_sin_marca`, `descripcion_catalogo` y `titulo_shopify`, conservando siempre el dato original. Cuando la marca de la columna `Marca` también aparezca dentro de `Nombre Sku`, se podrá remover de `descripcion_catalogo` con previsualización para evitar duplicaciones, mientras Shopify u otros destinos podrán reconstruir el título con la marca.
+
+Para InDesign, `descripcion_catalogo` deberá usar medidas compactas como `750CC`, `500GR`, `1LT`, `1KG` y `4x30MT`. Los valores estructurados de contenido, unidad, cantidad y medida deberán conservarse por separado aunque la salida visual sea compacta.
 
 ## Regla inicial para UXB = 0
 
@@ -248,6 +262,102 @@ Estas reglas se definirán cuando se analice la base maestra real:
 8. Campos necesarios para Adobe InDesign.
 9. Campos necesarios para Shopify.
 10. Campos necesarios para la futura aplicación móvil.
+
+## Preparación futura para sugerencias de IA
+
+El esquema futuro deberá contemplar campos o tablas para sugerencias de IA sin reemplazar los datos aprobados de la base maestra. Toda propuesta deberá pasar por previsualización y aprobación del usuario, y la incorporación de IA ocurrirá después de implementar *staging*, la evolución lógica v2 de `master_products`, reglas de normalización e historial de cambios.
+
+### Posibles campos futuros
+
+- `ai_suggested_description`;
+- `ai_suggested_brand`;
+- `ai_suggested_category`;
+- `ai_confidence`;
+- `ai_reason`;
+- `ai_status`;
+- `ai_reviewed_by_id`;
+- `ai_reviewed_at`.
+
+### Posibles estados de sugerencias
+
+- `pendiente_ia`;
+- `sugerido_por_ia`;
+- `aprobado_por_usuario`;
+- `rechazado_por_usuario`;
+- `requiere_revision`.
+
+Estos elementos son previsiones documentales y no implican implementar lógica, integraciones externas ni cambios de esquema en esta etapa.
+
+## Plantillas de salida por destino
+
+El esquema futuro deberá contemplar plantillas de exportación por destino. Cada plantilla definirá qué campos se incluyen, su orden y las reglas visuales o técnicas necesarias, sin alterar los datos maestros estructurados.
+
+### Campos o conceptos futuros sugeridos
+
+- `export_destination`;
+- `export_template`;
+- `export_format`;
+- `delimiter`;
+- `column_mapping`;
+- `field_order`;
+- `format_rules`;
+- `include_brand`;
+- `compact_measurements`;
+- `output_filename`;
+- `generated_by_id`;
+- `generated_at`.
+
+### Destinos posibles
+
+- `indesign`;
+- `shopify`;
+- `mobile_app`;
+- `internal_excel`;
+- `txt`;
+- `csv`;
+- `xlsx`;
+- `json_api`.
+
+### Ejemplos de configuración
+
+Para InDesign:
+
+- `include_brand: false` en `descripcion_catalogo` cuando la marca va separada;
+- `compact_measurements: true`;
+- `delimiter: ;`.
+
+Para Shopify:
+
+- `include_brand: true` en `titulo_shopify`;
+- `compact_measurements` configurable;
+- formato CSV o XLSX.
+
+Para la aplicación móvil:
+
+- salida JSON o API;
+- datos separados por campos;
+- descripción legible.
+
+Para Excel interno:
+
+- salida XLSX;
+- datos separados y auditables.
+
+## Arquitectura técnica futura por capas
+
+La arquitectura propuesta se detalla en [Arquitectura de staging, normalización y productos maestros v2](STAGING_AND_NORMALIZATION_ARCHITECTURE.md):
+
+- `product_staging_rows` separa y conserva el dato original antes de homologarlo;
+- `normalization_rules` contiene reglas reutilizables;
+- `normalization_suggestions` permite previsualizar y aprobar antes de aplicar;
+- `product_change_logs` garantiza la trazabilidad;
+- la evolución lógica v2 de `master_products` será la base maestra limpia que alimentará las salidas por destino.
+
+El esquema deberá diferenciar campos originales, campos homologados, sugerencias y registros de cambio. Las correcciones aprobadas se aplicarán únicamente sobre campos homologados o de salida, mientras `product_change_logs` conservará su trazabilidad.
+
+La evolución física recomendada es extender `master_products` como tabla maestra final y única fuente de verdad. *Staging*, reglas, sugerencias, historial y plantillas de salida vivirán en tablas separadas, según la [estrategia física de base de datos](DATABASE_PHYSICAL_DESIGN_PLAN.md).
+
+Se adopta `codigo_producto` como nombre funcional. Los campos heredados de `master_products` no se eliminarán inicialmente: la evolución será incremental y las sugerencias se gestionarán por campo y por regla.
 
 ## Orden recomendado
 
