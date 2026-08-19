@@ -19,6 +19,8 @@ Convertir la base maestra en una fuente de verdad reutilizable, capaz de abastec
 
 El sistema no se concibe como un simple importador o exportador de archivos. Su propósito es centralizar, homologar y gobernar la información de productos para que cada salida utilice datos confiables y reglas adecuadas a su proceso.
 
+Los archivos Excel reales de Administración o base maestra son insumos externos de carga y no forman parte del código fuente de la aplicación.
+
 ## Principio central de los datos
 
 La responsabilidad sobre los datos se divide de la siguiente manera:

@@ -25,3 +25,12 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# External source data files
+/excel basico/
+/local-data/
+/storage/app/imports/
+/storage/app/private/imports/
+*.xlsx
+*.xls
+*.csv

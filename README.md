@@ -11,6 +11,8 @@
 
 El Manejador de Base de Datos Comercial busca construir y mantener una base maestra limpia, homologada y administrable de aproximadamente 8.000 productos. Esta fuente de verdad permitirá cotejar la información administrativa diaria y generar salidas adaptadas a Adobe InDesign, Shopify, reportes internos y una futura aplicación móvil.
 
+Los archivos reales de datos utilizados como insumos de carga son externos a la aplicación y no se versionan en el repositorio.
+
 La misión, la visión y la estrategia funcional del sistema se detallan en [Visión del proyecto](docs/PROJECT_VISION.md).
 
 La próxima etapa de análisis está documentada en [Diseño de la base maestra de productos](docs/MASTER_PRODUCTS_SCHEMA_PLAN.md).

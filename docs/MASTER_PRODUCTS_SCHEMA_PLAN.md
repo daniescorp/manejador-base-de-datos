@@ -37,6 +37,14 @@ El sistema deberá mapear `Sku` → `codigo_producto`. `codigo_producto` será l
 
 Los valores duplicados de `codigo_producto` detectados en *staging* deben resolverse antes de consolidar la base maestra activa e imponer una restricción de unicidad definitiva. Hasta completar esa depuración, la base semilla no debe asumirse única por CODIGO/SKU.
 
+## Archivos fuente externos
+
+La base `SKU Daniel 8mil(1).xlsx` es un insumo externo de análisis y carga. No forma parte de la aplicación, no debe almacenarse dentro del repositorio, versionarse en Git ni subirse a GitHub.
+
+El sistema deberá permitir cargar archivos similares en el futuro mediante procesos de importación y *staging*. La base maestra limpia y operativa debe vivir en MySQL, sin depender de que el archivo Excel permanezca dentro de la aplicación.
+
+El Excel original puede conservarse como respaldo operativo fuera del repositorio. Los datos originales necesarios para trazabilidad deberán preservarse en *staging* o en futuras tablas de importación, no como un archivo fijo del código fuente.
+
 ## Saneamiento y homologación masiva
 
 La base maestra puede contener aproximadamente 8.000 productos con errores o inconsistencias en descripciones, gramajes, abreviaturas, ortografía, categorías, marcas y formatos. Por esa escala, el proceso no debe depender de corregir producto por producto.
