@@ -9,7 +9,7 @@
 
 ## Propósito del proyecto
 
-El Manejador de Base de Datos Comercial busca construir y mantener una base maestra limpia, homologada y administrable de productos. Esta fuente de verdad permitirá cotejar la información administrativa diaria y generar salidas adaptadas a Adobe InDesign, Shopify, reportes internos y una futura aplicación móvil.
+El Manejador de Base de Datos Comercial busca construir y mantener una base maestra limpia, homologada y administrable de aproximadamente 8.000 productos. Esta fuente de verdad permitirá cotejar la información administrativa diaria y generar salidas adaptadas a Adobe InDesign, Shopify, reportes internos y una futura aplicación móvil.
 
 La misión, la visión y la estrategia funcional del sistema se detallan en [Visión del proyecto](docs/PROJECT_VISION.md).
 

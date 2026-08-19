@@ -4,6 +4,8 @@
 
 Construir una base maestra limpia, homologada y administrable de productos que permita reducir tiempos, errores, costos y trabajo manual en los procesos comerciales, gráficos y digitales de la organización.
 
+El alcance estimado es de aproximadamente 8.000 productos, muchos de los cuales pueden contener errores o inconsistencias en descripciones, gramajes, abreviaturas, ortografía, categorías, marcas y formatos.
+
 ## Visión
 
 Convertir la base maestra en una fuente de verdad reutilizable, capaz de abastecer de forma consistente diferentes procesos y canales:
@@ -26,6 +28,14 @@ La responsabilidad sobre los datos se divide de la siguiente manera:
 - Los procesos determinan qué productos se incluyen, qué reglas se aplican y en qué formato se genera cada salida.
 
 Esta separación protege la calidad de la información maestra sin perder la vigencia de los datos operativos diarios.
+
+## Escala y estrategia de saneamiento
+
+El saneamiento de una base de aproximadamente 8.000 productos debe ser masivo, progresivo y controlado. El sistema debe evitar que la calidad de los datos dependa de corregir manualmente cada producto de forma aislada y debe permitir trabajar por tandas, filtros, estados y patrones repetidos.
+
+Los datos originales deben conservarse separados de los datos homologados para mantener trazabilidad, comparar cambios y revisar las correcciones antes de aprobarlas. Las futuras reglas de homologación deberán normalizar de manera consistente descripciones, gramajes, unidades, abreviaturas, marcas, categorías, ortografía y formatos, sin sobrescribir ni perder la información recibida.
+
+Este enfoque busca reducir el tiempo, los costos y el trabajo operativo necesarios para depurar y mantener la base maestra, permitiendo que el equipo concentre la revisión manual en excepciones y casos que realmente requieran criterio humano.
 
 ## Flujo conceptual
 

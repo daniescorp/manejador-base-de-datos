@@ -29,6 +29,56 @@ Los archivos administrativos diarios mandan en:
 
 La integración entre ambas fuentes debe preservar el contenido homologado y actualizar solamente la información operativa que corresponda a cada proceso.
 
+## Saneamiento y homologación masiva
+
+La base maestra puede contener aproximadamente 8.000 productos con errores o inconsistencias en descripciones, gramajes, abreviaturas, ortografía, categorías, marcas y formatos. Por esa escala, el proceso no debe depender de corregir producto por producto.
+
+El sistema debe permitir importar los datos originales sin perderlos y diferenciarlos claramente de los datos homologados. En particular, debe conservar la descripción original y mantener por separado la descripción homologada, de modo que exista trazabilidad y que ninguna corrección elimine el valor recibido de origen.
+
+Ejemplo:
+
+```text
+descripcion_original: LICOR PETACA CAFE/COGNA
+descripcion_homologada: Licor petaca café al cognac
+```
+
+El saneamiento debe poder organizarse por tandas, filtros y estados. También debe contemplar futuras reglas de normalización y ayudar a detectar patrones repetidos, como abreviaturas, errores ortográficos, unidades o formatos recurrentes, para aplicar criterios consistentes a grupos de productos. La corrección debe avanzar de manera progresiva y controlada, con revisión de excepciones y aprobación antes de considerar homologado un dato.
+
+### Posibles campos futuros
+
+- `descripcion_original`;
+- `descripcion_homologada`;
+- `descripcion_catalogo`;
+- `marca_original`;
+- `marca_homologada`;
+- `gramaje_original`;
+- `gramaje_normalizado`;
+- `unidad_normalizada`;
+- `estado_homologacion`;
+- `requiere_revision`.
+
+### Posibles estados
+
+- `pendiente_revision`;
+- `sugerido_por_sistema`;
+- `requiere_correccion`;
+- `homologado`;
+- `aprobado_catalogo`;
+- `sin_imagen`;
+- `sin_precio`;
+- `inactivo`.
+
+### Posibles tablas futuras
+
+- `normalization_rules`;
+- `brands`;
+- `categories`;
+- `product_prices`;
+- `product_images`;
+- `product_audit_logs`.
+
+Estos campos, estados y tablas son alternativas para el análisis futuro; no constituyen todavía una definición del esquema ni implican implementar lógica de homologación en esta etapa.
+
 ## Campos a analizar cuando se reciba la base maestra real
 
 Los siguientes campos son candidatos de análisis, no una definición final del esquema.
