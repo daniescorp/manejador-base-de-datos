@@ -22,6 +22,8 @@ Los cambios reales sobre la base de datos serán realizados por el sistema Larav
 
 El dato original nunca se destruye. El dato homologado se genera mediante reglas aprobadas y todo cambio debe ser trazable.
 
+En la primera etapa, el sistema será multiusuario simple: varios administradores podrán operarlo y todos tendrán el mismo nivel de acceso. La trazabilidad se mantendrá por usuario para identificar quién realizó cada acción, mientras que los roles y permisos avanzados quedarán para una etapa futura.
+
 ### Codex
 
 - Programa o documenta según las instrucciones recibidas.

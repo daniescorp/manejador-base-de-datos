@@ -378,6 +378,22 @@ Las sugerencias aprobadas podrán actualizar campos homologados o de salida; los
 
 La auditoría no debe eliminarse al actualizar o desactivar un producto.
 
+## Estrategia inicial de usuarios
+
+La tabla `users` seguirá siendo la base de autenticación. En esta etapa, todos los usuarios habilitados serán administradores con el mismo nivel de acceso.
+
+No se crearán tablas de roles ni permisos. Tampoco se instalará Spatie Permission ni otro paquete similar durante esta etapa.
+
+Los campos de auditoría seguirán apuntando a `users` para registrar a los responsables de cada acción:
+
+- `approved_by_id`;
+- `created_by_id`;
+- `updated_by_id`;
+- `reviewed_by_id`;
+- `changed_by_id`.
+
+Estos campos no implican roles diferentes. Solo registran qué administrador creó, aprobó, revisó o modificó cada dato.
+
 ## Estrategia de exportaciones
 
 `export_templates` y `export_template_fields` permitirán generar salidas para:

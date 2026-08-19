@@ -37,6 +37,20 @@ Los productos con datos operativos incompletos, como `UXB = 0`, deben conservars
 
 El gobierno del dato será controlado: la IA y las reglas sugieren, pero el usuario aprueba y el sistema registra cada cambio sin destruir el dato original.
 
+## Usuarios y administración inicial
+
+En la primera etapa, el sistema funcionará con un esquema multiusuario simple. Habrá varios usuarios administradores habilitados, todos con el mismo nivel de acceso administrativo.
+
+No se implementarán roles ni permisos avanzados inicialmente. Si el proyecto crece y aparecen nuevas necesidades operativas, podrán incorporarse perfiles como:
+
+- operador de carga;
+- revisor;
+- aprobador;
+- solo lectura;
+- administrador general.
+
+El principio para esta etapa es: primero simplicidad operativa; después, roles si el proyecto lo requiere.
+
 ## Escala y estrategia de saneamiento
 
 El saneamiento de una base de aproximadamente 8.000 productos debe ser masivo, progresivo y controlado. El sistema debe evitar que la calidad de los datos dependa de corregir manualmente cada producto de forma aislada y debe permitir trabajar por tandas, filtros, estados y patrones repetidos.
