@@ -82,6 +82,10 @@ Flujo de corrección:
 6. El dato original queda intacto.
 7. El sistema registra el historial.
 
+### Servicio inicial de análisis
+
+Ya existe un servicio inicial que analiza filas de *staging* y genera `normalization_suggestions` desde reglas activas de `normalization_rules`. En esta etapa solo crea propuestas revisables: no modifica productos maestros, no aplica correcciones y no registra cambios como aprobados.
+
 Ejemplo:
 
 ```text
