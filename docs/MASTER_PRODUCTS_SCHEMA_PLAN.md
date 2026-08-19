@@ -95,6 +95,67 @@ El saneamiento debe poder organizarse por tandas, filtros y estados. También de
 
 Estos campos, estados y tablas son alternativas para el análisis futuro; no constituyen todavía una definición del esquema ni implican implementar lógica de homologación en esta etapa.
 
+## Normalización de medidas y unidades
+
+El objetivo es detectar y normalizar las medidas presentes en `Nombre Sku` para construir descripciones limpias y campos reutilizables, conservando siempre la medida original separada de la normalizada. Las correcciones deberán poder aplicarse por lote y revisarse también de forma individual.
+
+### Equivalencias de unidades
+
+| Tipo | Valores originales | Unidad normalizada |
+| --- | --- | --- |
+| Peso en gramos | `GRS`, `GRS.`, `GR`, `GR.`, `G`, `G.` | `GR` |
+| Peso en kilogramos | `KGS`, `KGS.`, `KG`, `KG.`, `K`, `K.` | `KG` |
+| Volumen en litros | `LTS`, `LTS.`, `LT`, `LT.`, `L`, `L.` | `LT` |
+
+### Regla de detección
+
+Una unidad solo debe detectarse cuando está asociada a un número. Esta condición evita interpretar la `G` de palabras como `GATO` como gramos o la letra `K` como kilogramos cuando no forma parte de una medida numérica.
+
+Ejemplos de normalización:
+
+- `500 G` → `500 GR`;
+- `500G` → `500 GR`;
+- `500 Grs` → `500 GR`;
+- `1 KGS` → `1 KG`;
+- `1K` → `1 KG`;
+- `1.5K` → `1.5 KG`;
+- `1 LTS` → `1 LT`;
+- `1.5LT` → `1.5 LT`.
+
+### Ejemplo real
+
+Para el valor original `ALIM.GATO CAT CHOW ADULTO PES/POLLO 1K`, el sistema deberá derivar:
+
+```text
+medida_original: 1K
+contenido_valor: 1
+unidad_original: K
+unidad_normalizada: KG
+medida_normalizada: 1 KG
+```
+
+### Campos futuros sugeridos
+
+- `medida_original`;
+- `contenido_valor`;
+- `unidad_original`;
+- `unidad_normalizada`;
+- `medida_normalizada`;
+- `medida_requiere_revision`.
+
+### Casos especiales
+
+Medidas compuestas, combos, rangos o variantes decimales como `9X170G`, `300/310G`, `1.5K` y `1,5 LTS` pueden requerir reglas adicionales. Cuando una regla automática no sea suficiente o el resultado sea ambiguo, el producto deberá marcarse con `medida_requiere_revision` para su control individual.
+
+### Relación con la homologación
+
+La medida normalizada deberá alimentar de forma consistente:
+
+- `descripcion_homologada`;
+- `descripcion_catalogo`;
+- `titulo_shopify`;
+- la futura aplicación móvil o API.
+
 ## Regla inicial para UXB = 0
 
 La base maestra real analizada contiene aproximadamente 8.815 registros y cerca de 1.265 productos con `UXB = 0`. Por decisión funcional, estos productos no serán tomados por ahora como productos activos del sistema, pero tampoco deben eliminarse.

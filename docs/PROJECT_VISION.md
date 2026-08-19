@@ -41,6 +41,8 @@ El saneamiento de una base de aproximadamente 8.000 productos debe ser masivo, p
 
 Los datos originales deben conservarse separados de los datos homologados para mantener trazabilidad, comparar cambios y revisar las correcciones antes de aprobarlas. Las futuras reglas de homologación deberán normalizar de manera consistente descripciones, gramajes, unidades, abreviaturas, marcas, categorías, ortografía y formatos, sin sobrescribir ni perder la información recibida.
 
+El sistema debe normalizar medidas y unidades para evitar inconsistencias como GRS/G/GR, KGS/K/KG y LTS/L/LT.
+
 Este enfoque busca reducir el tiempo, los costos y el trabajo operativo necesarios para depurar y mantener la base maestra, permitiendo que el equipo concentre la revisión manual en excepciones y casos que realmente requieran criterio humano.
 
 ## Flujo conceptual
