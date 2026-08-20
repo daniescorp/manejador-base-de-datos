@@ -431,7 +431,7 @@ class ProductStagingAnalyzerTest extends TestCase
         $this->createRule([
             'detected_value' => 'LIMON',
             'replacement_value' => 'LIMÓN',
-            'applies_to_field' => 'marca_homologada',
+            'applies_to_field' => 'titulo_shopify',
         ]);
         $row = ProductStagingRow::factory()->create([
             'nombre_sku_original' => 'CARAMELOS LIMON',
@@ -442,6 +442,235 @@ class ProductStagingAnalyzerTest extends TestCase
 
         $this->assertSame('analyzed', $row->status);
         $this->assertSame(0, $row->suggestions()->count());
+    }
+
+    public function test_it_creates_an_arlistan_brand_suggestion(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'confidence_level' => 'contextual',
+        ]);
+        $masterProduct = MasterProduct::factory()->create([
+            'name' => 'Producto maestro protegido por análisis de marca',
+        ]);
+        $row = ProductStagingRow::factory()
+            ->for($masterProduct, 'masterProduct')
+            ->create([
+                'marca_original' => 'ARLISTAN',
+            ]);
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        $this->analyzer()->analyze($row);
+
+        $suggestion = $this->suggestionFor($row, $rule, 'marca_homologada');
+        $row->refresh();
+
+        $this->assertSame('marca_homologada', $suggestion->field_name);
+        $this->assertSame('ARLISTAN', $suggestion->original_value);
+        $this->assertSame('Arlistán', $suggestion->suggested_value);
+        $this->assertSame('contextual', $suggestion->confidence_level);
+        $this->assertSame('pending', $suggestion->status);
+        $this->assertStringContainsString('homologación de marca', $suggestion->suggestion_reason);
+        $this->assertSame('ARLISTAN', $row->marca_original);
+        $this->assertSame('suggested', $row->status);
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertEquals($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+    }
+
+    public function test_it_creates_a_manon_brand_suggestion_with_another_rule_type(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'MANON',
+            'replacement_value' => 'Manón',
+            'rule_type' => 'accent',
+            'applies_to_field' => 'marca_homologada',
+            'is_automatic' => false,
+            'requires_review' => false,
+        ]);
+        $row = ProductStagingRow::factory()->create([
+            'marca_original' => 'MANON',
+        ]);
+
+        $this->analyzer()->analyze($row);
+
+        $suggestion = $this->suggestionFor($row, $rule, 'marca_homologada');
+        $row->refresh();
+
+        $this->assertSame('Manón', $suggestion->suggested_value);
+        $this->assertSame('marca_homologada', $suggestion->field_name);
+        $this->assertTrue($row->requires_review);
+        $this->assertStringContainsString('requiere revisión', $row->review_reason);
+    }
+
+    public function test_brand_matching_is_exact_case_insensitive_and_trims_edges(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+        ]);
+        $matchingRow = ProductStagingRow::factory()->create([
+            'marca_original' => '  arlistan  ',
+        ]);
+        $partialRow = ProductStagingRow::factory()->create([
+            'marca_original' => 'SUPER ARLISTAN PLUS',
+        ]);
+
+        $this->analyzer()->analyze($matchingRow);
+        $this->analyzer()->analyze($partialRow);
+
+        $suggestion = $this->suggestionFor($matchingRow, $rule, 'marca_homologada');
+
+        $this->assertSame('  arlistan  ', $suggestion->original_value);
+        $this->assertSame('Arlistán', $suggestion->suggested_value);
+        $this->assertSame('  arlistan  ', $matchingRow->fresh()->marca_original);
+        $this->assertSame(
+            0,
+            $this->suggestionQuery($partialRow, $rule, 'marca_homologada')->count(),
+        );
+    }
+
+    public function test_invalid_original_brands_are_marked_for_review(): void
+    {
+        foreach ([null, '', '   ', '0', 0] as $brand) {
+            $row = ProductStagingRow::factory()->create([
+                'marca_original' => $brand,
+                'requires_review' => false,
+                'review_reason' => null,
+            ]);
+
+            $this->analyzer()->analyze($row);
+            $row->refresh();
+
+            $this->assertSame('requires_review', $row->status);
+            $this->assertTrue($row->requires_review);
+            $this->assertStringContainsString(
+                'Marca original vacía o no válida',
+                $row->review_reason,
+            );
+            $this->assertSame(0, $row->suggestions()
+                ->where('field_name', 'marca_homologada')
+                ->count());
+            $this->assertNull($row->approved_at);
+            $this->assertNull($row->approved_by_id);
+        }
+    }
+
+    public function test_invalid_sources_keep_a_safe_status_even_when_another_field_matches(): void
+    {
+        $descriptionRule = $this->createRule([
+            'detected_value' => 'LIMON',
+            'replacement_value' => 'LIMÓN',
+        ]);
+        $brandRule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+        ]);
+        $invalidBrandRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'CARAMELOS LIMON',
+            'marca_original' => '0',
+        ]);
+        $invalidDescriptionRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => null,
+            'marca_original' => 'ARLISTAN',
+        ]);
+
+        $this->analyzer()->analyze($invalidBrandRow);
+        $this->analyzer()->analyze($invalidDescriptionRow);
+
+        $this->assertSame(
+            1,
+            $this->suggestionQuery($invalidBrandRow, $descriptionRule)->count(),
+        );
+        $this->assertSame(
+            1,
+            $this->suggestionQuery($invalidDescriptionRow, $brandRule, 'marca_homologada')->count(),
+        );
+
+        foreach ([$invalidBrandRow, $invalidDescriptionRow] as $row) {
+            $row->refresh();
+
+            $this->assertSame('requires_review', $row->status);
+            $this->assertTrue($row->requires_review);
+        }
+    }
+
+    public function test_brand_analysis_is_idempotent(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+        ]);
+        $row = ProductStagingRow::factory()->create([
+            'marca_original' => 'ARLISTAN',
+        ]);
+
+        $this->analyzer()->analyze($row);
+        $suggestionId = $this->suggestionFor($row, $rule, 'marca_homologada')->getKey();
+
+        $this->analyzer()->analyze($row);
+
+        $query = $this->suggestionQuery($row, $rule, 'marca_homologada');
+
+        $this->assertSame(1, $query->count());
+        $this->assertSame($suggestionId, $query->firstOrFail()->getKey());
+    }
+
+    public function test_brand_analysis_preserves_terminal_suggestions(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'marca_original' => 'ARLISTAN',
+        ]);
+        $snapshots = [];
+
+        foreach (['approved', 'rejected', 'applied'] as $status) {
+            $rule = $this->createRule([
+                'detected_value' => 'ARLISTAN',
+                'replacement_value' => 'Arlistán',
+                'rule_type' => 'brand_normalization',
+                'applies_to_field' => 'marca_homologada',
+            ]);
+            $suggestion = NormalizationSuggestion::factory()
+                ->for($row, 'stagingRow')
+                ->for($rule, 'rule')
+                ->create([
+                    'field_name' => 'marca_homologada',
+                    'original_value' => 'Marca original protegida',
+                    'suggested_value' => 'Marca sugerida protegida',
+                    'suggestion_reason' => "Decisión protegida: {$status}",
+                    'status' => $status,
+                ]);
+
+            $snapshots[$suggestion->getKey()] = $suggestion->getAttributes();
+        }
+
+        $this->analyzer()->analyze($row);
+
+        foreach ($snapshots as $suggestionId => $snapshot) {
+            $this->assertEquals(
+                $snapshot,
+                NormalizationSuggestion::query()->findOrFail($suggestionId)->getAttributes(),
+            );
+        }
+
+        $this->assertSame(3, $row->suggestions()
+            ->where('field_name', 'marca_homologada')
+            ->count());
+        $this->assertSame(0, $row->suggestions()
+            ->where('field_name', 'marca_homologada')
+            ->where('status', 'pending')
+            ->count());
     }
 
     public function test_each_suggestion_is_built_from_the_original_source(): void
@@ -520,16 +749,20 @@ class ProductStagingAnalyzerTest extends TestCase
     private function suggestionFor(
         ProductStagingRow $row,
         NormalizationRule $rule,
+        string $fieldName = 'descripcion_catalogo',
     ): NormalizationSuggestion {
-        return $this->suggestionQuery($row, $rule)->sole();
+        return $this->suggestionQuery($row, $rule, $fieldName)->sole();
     }
 
-    private function suggestionQuery(ProductStagingRow $row, NormalizationRule $rule)
-    {
+    private function suggestionQuery(
+        ProductStagingRow $row,
+        NormalizationRule $rule,
+        string $fieldName = 'descripcion_catalogo',
+    ) {
         return NormalizationSuggestion::query()->where([
             'product_staging_row_id' => $row->getKey(),
             'normalization_rule_id' => $rule->getKey(),
-            'field_name' => 'descripcion_catalogo',
+            'field_name' => $fieldName,
         ]);
     }
 }

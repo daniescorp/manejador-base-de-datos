@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\DB;
 
 class ProductStagingAnalyzer
 {
-    private const TARGET_FIELD = 'descripcion_catalogo';
+    private const DESCRIPTION_FIELD = 'descripcion_catalogo';
+
+    private const BRAND_FIELD = 'marca_homologada';
 
     private const EDITABLE_SUGGESTION_STATUSES = [
         'pending',
@@ -23,35 +25,55 @@ class ProductStagingAnalyzer
                 ->lockForUpdate()
                 ->findOrFail($row->getKey());
 
-            $source = (string) $stagingRow->nombre_sku_original;
-
-            if (blank(trim($source))) {
-                $stagingRow->update([
-                    'status' => 'requires_review',
-                    'requires_review' => true,
-                    'review_reason' => $this->appendReviewReason(
-                        $stagingRow->review_reason,
-                        'Nombre Sku original vacío',
-                    ),
-                    'analyzed_at' => now(),
-                ]);
-
-                return;
-            }
-
             $matchedRules = 0;
             $reviewReasons = [];
+            $descriptionSource = (string) $stagingRow->nombre_sku_original;
+            $descriptionIsBlank = blank(trim($descriptionSource));
 
-            foreach ($this->activeRules() as $rule) {
-                if (! $this->matches($source, $rule->detected_value)) {
-                    continue;
+            if ($descriptionIsBlank) {
+                $reviewReasons[] = 'Nombre Sku original vacío';
+            } else {
+                foreach ($this->activeDescriptionRules() as $rule) {
+                    if (! $this->matchesDescription($descriptionSource, $rule->detected_value)) {
+                        continue;
+                    }
+
+                    $matchedRules++;
+                    $this->storeSuggestion(
+                        $stagingRow,
+                        $rule,
+                        self::DESCRIPTION_FIELD,
+                        $descriptionSource,
+                    );
+
+                    if ($rule->requires_review) {
+                        $reviewReasons[] = "Regla {$rule->detected_value}: requiere revisión manual o contextual";
+                    }
                 }
+            }
 
-                $matchedRules++;
-                $this->storeSuggestion($stagingRow, $rule, $source);
+            $brandSource = (string) $stagingRow->marca_original;
+            $brandIsInvalid = $this->brandIsInvalid($brandSource);
 
-                if ($rule->requires_review) {
-                    $reviewReasons[] = "Regla {$rule->detected_value}: requiere revisión manual o contextual";
+            if ($brandIsInvalid) {
+                $reviewReasons[] = 'Marca original vacía o no válida';
+            } else {
+                foreach ($this->activeBrandRules() as $rule) {
+                    if (! $this->matchesBrand($brandSource, $rule->detected_value)) {
+                        continue;
+                    }
+
+                    $matchedRules++;
+                    $this->storeSuggestion(
+                        $stagingRow,
+                        $rule,
+                        self::BRAND_FIELD,
+                        $brandSource,
+                    );
+
+                    if ($this->brandRuleRequiresReview($rule)) {
+                        $reviewReasons[] = "Regla de marca {$rule->detected_value}: requiere revisión manual o contextual";
+                    }
                 }
             }
 
@@ -61,9 +83,15 @@ class ProductStagingAnalyzer
                 $reviewReason = $this->appendReviewReason($reviewReason, $reason);
             }
 
+            $requiresReview = $stagingRow->requires_review || $reviewReasons !== [];
+
             $stagingRow->update([
-                'status' => $matchedRules > 0 ? 'suggested' : 'analyzed',
-                'requires_review' => $stagingRow->requires_review || $reviewReasons !== [],
+                'status' => $descriptionIsBlank || $brandIsInvalid
+                    ? 'requires_review'
+                    : ($matchedRules > 0
+                        ? 'suggested'
+                        : ($requiresReview ? 'requires_review' : 'analyzed')),
+                'requires_review' => $requiresReview,
                 'review_reason' => $reviewReason,
                 'analyzed_at' => now(),
             ]);
@@ -73,15 +101,28 @@ class ProductStagingAnalyzer
     /**
      * @return iterable<int, NormalizationRule>
      */
-    private function activeRules(): iterable
+    private function activeDescriptionRules(): iterable
     {
         return NormalizationRule::query()
             ->where('active', true)
             ->where(function ($query): void {
                 $query
-                    ->where('applies_to_field', self::TARGET_FIELD)
+                    ->where('applies_to_field', self::DESCRIPTION_FIELD)
                     ->orWhereNull('applies_to_field');
             })
+            ->orderBy('priority')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * @return iterable<int, NormalizationRule>
+     */
+    private function activeBrandRules(): iterable
+    {
+        return NormalizationRule::query()
+            ->where('active', true)
+            ->where('applies_to_field', self::BRAND_FIELD)
             ->orderBy('priority')
             ->orderBy('id')
             ->get();
@@ -90,12 +131,13 @@ class ProductStagingAnalyzer
     private function storeSuggestion(
         ProductStagingRow $row,
         NormalizationRule $rule,
+        string $fieldName,
         string $source,
     ): void {
         $suggestion = NormalizationSuggestion::query()->firstOrNew([
             'product_staging_row_id' => $row->getKey(),
             'normalization_rule_id' => $rule->getKey(),
-            'field_name' => self::TARGET_FIELD,
+            'field_name' => $fieldName,
         ]);
 
         if ($suggestion->exists
@@ -105,8 +147,8 @@ class ProductStagingAnalyzer
 
         $suggestion->fill([
             'original_value' => $source,
-            'suggested_value' => $this->suggestedValue($source, $rule),
-            'suggestion_reason' => $this->suggestionReason($rule),
+            'suggested_value' => $this->suggestedValue($source, $rule, $fieldName),
+            'suggestion_reason' => $this->suggestionReason($rule, $fieldName),
             'confidence_level' => $rule->confidence_level,
         ]);
 
@@ -117,7 +159,7 @@ class ProductStagingAnalyzer
         $suggestion->save();
     }
 
-    private function matches(string $source, ?string $detectedValue): bool
+    private function matchesDescription(string $source, ?string $detectedValue): bool
     {
         if (blank($detectedValue)) {
             return false;
@@ -126,10 +168,41 @@ class ProductStagingAnalyzer
         return preg_match($this->literalPattern($detectedValue), $source) === 1;
     }
 
-    private function suggestedValue(string $source, NormalizationRule $rule): ?string
+    private function matchesBrand(string $source, ?string $detectedValue): bool
     {
+        if (blank($detectedValue)) {
+            return false;
+        }
+
+        return mb_strtolower(trim($source), 'UTF-8')
+            === mb_strtolower(trim($detectedValue), 'UTF-8');
+    }
+
+    private function brandIsInvalid(string $source): bool
+    {
+        $normalized = trim($source);
+
+        return $normalized === '' || $normalized === '0';
+    }
+
+    private function brandRuleRequiresReview(NormalizationRule $rule): bool
+    {
+        return $rule->requires_review
+            || ! $rule->is_automatic
+            || $rule->rule_type === 'manual_review';
+    }
+
+    private function suggestedValue(
+        string $source,
+        NormalizationRule $rule,
+        string $fieldName,
+    ): ?string {
         if ($rule->replacement_value === null) {
             return null;
+        }
+
+        if ($fieldName === self::BRAND_FIELD) {
+            return $rule->replacement_value;
         }
 
         return preg_replace_callback(
@@ -146,8 +219,20 @@ class ProductStagingAnalyzer
         return "~{$literal}~iu";
     }
 
-    private function suggestionReason(NormalizationRule $rule): string
+    private function suggestionReason(NormalizationRule $rule, string $fieldName): string
     {
+        if ($fieldName === self::BRAND_FIELD) {
+            if ($rule->replacement_value === null) {
+                return 'Regla sensible de homologación de marca: requiere revisión manual. No aplicar automáticamente.';
+            }
+
+            if ($this->brandRuleRequiresReview($rule)) {
+                return 'Regla de homologación de marca: requiere revisión antes de aplicar.';
+            }
+
+            return 'Regla de homologación de marca detectada. Requiere previsualización y aprobación.';
+        }
+
         if ($rule->rule_type === 'no_change') {
             return 'Regla de conservación: mantener el valor original sin cambios.';
         }

@@ -90,11 +90,11 @@ Ya existe un servicio inicial que analiza filas de *staging* y genera `normaliza
 
 El panel Filament permite crear, consultar, editar, activar y desactivar reglas del Diccionario de Normalización para `descripcion_catalogo` y `marca_homologada`. No ofrece borrado ni borrado masivo, conserva la autoría de creación y actualización, y permite registrar reglas como `MX` → `MAX`, `ARLISTAN` → `Arlistán` o `MANON` → `Manón` con previsualización y revisión.
 
-`ProductStagingAnalyzer` analiza actualmente `descripcion_catalogo` a partir de `nombre_sku_original`; la aplicación automática de reglas dirigidas a `marca_homologada` queda pendiente para un bloque futuro de **homologación de marcas**. En ese bloque, `marca_original` deberá conservarse intacta, `marca_homologada` guardará la escritura final y las marcas deberán tratarse de forma diferenciada respecto de las palabras comunes.
+`ProductStagingAnalyzer` analiza `descripcion_catalogo` a partir de `nombre_sku_original` y también puede generar sugerencias para `marca_homologada` a partir de `marca_original`. Las marcas se cotejan por igualdad exacta, sin distinguir mayúsculas y minúsculas y descartando solo los espacios de los extremos; no se aplican por coincidencia parcial. `marca_original` siempre se conserva intacta y casos como `ARLISTAN` → `Arlistán` o `MANON` → `Manón` se tratan como homologaciones de marca, no como palabras comunes de la descripción.
 
 ### Servicio inicial de composición de previsualización
 
-El sistema cuenta con un servicio que combina las sugerencias aplicables en `product_staging_rows.normalized_preview` sin aprobarlas ni modificar productos maestros. Las sugerencias sensibles quedan identificadas como bloqueadas, de revisión manual o sin cambio dentro de la previsualización.
+El sistema cuenta con un servicio que combina las sugerencias aplicables en `product_staging_rows.normalized_preview` sin aprobarlas ni modificar productos maestros. La previsualización mantiene la estructura existente de `descripcion_catalogo` e incorpora `source_brand`, `marca_homologada` y los identificadores de sugerencias de marca separados entre aplicados, pendientes de revisión y bloqueados. La aprobación definitiva y el traslado a `master_products` quedan para una etapa posterior.
 
 Ejemplo:
 

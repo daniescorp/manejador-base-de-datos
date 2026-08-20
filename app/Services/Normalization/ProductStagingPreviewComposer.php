@@ -12,7 +12,9 @@ use LogicException;
 
 class ProductStagingPreviewComposer
 {
-    private const TARGET_FIELD = 'descripcion_catalogo';
+    private const DESCRIPTION_FIELD = 'descripcion_catalogo';
+
+    private const BRAND_FIELD = 'marca_homologada';
 
     private const TERMINAL_ROW_STATUSES = [
         'approved',
@@ -22,7 +24,7 @@ class ProductStagingPreviewComposer
     ];
 
     /**
-     * @return array<string, array<int, int>|string>
+     * @return array<string, mixed>
      */
     public function compose(ProductStagingRow $row): array
     {
@@ -33,86 +35,170 @@ class ProductStagingPreviewComposer
 
             $this->ensureComposable($stagingRow);
 
-            $source = (string) $stagingRow->nombre_sku_original;
-            $combined = $source;
-            $sourceIsBlank = blank(trim($source));
-            $appliedSuggestionIds = [];
-            $blockedSuggestionIds = [];
-            $manualReviewSuggestionIds = [];
-            $noChangeSuggestionIds = [];
+            $descriptionSource = (string) $stagingRow->nombre_sku_original;
+            $descriptionPreview = $descriptionSource;
+            $descriptionIsBlank = blank(trim($descriptionSource));
+            $descriptionAppliedIds = [];
+            $descriptionBlockedIds = [];
+            $descriptionManualReviewIds = [];
+            $descriptionNoChangeIds = [];
 
-            foreach ($this->pendingSuggestions($stagingRow) as $suggestion) {
+            foreach ($this->pendingSuggestions($stagingRow, self::DESCRIPTION_FIELD) as $suggestion) {
                 $rule = $suggestion->rule;
 
                 if ($rule?->rule_type === 'manual_review') {
-                    $manualReviewSuggestionIds[] = $suggestion->getKey();
+                    $descriptionManualReviewIds[] = $suggestion->getKey();
 
                     continue;
                 }
 
                 if ($rule?->rule_type === 'no_change') {
-                    $noChangeSuggestionIds[] = $suggestion->getKey();
+                    $descriptionNoChangeIds[] = $suggestion->getKey();
 
                     continue;
                 }
 
-                if ($sourceIsBlank || ! $this->isApplicable($rule)) {
-                    $blockedSuggestionIds[] = $suggestion->getKey();
+                if ($descriptionIsBlank || ! $this->isDescriptionRuleApplicable($rule)) {
+                    $descriptionBlockedIds[] = $suggestion->getKey();
 
                     continue;
                 }
 
-                [$combined, $wasApplied] = $this->applyRule($combined, $rule);
+                [$descriptionPreview, $wasApplied] = $this->applyDescriptionRule(
+                    $descriptionPreview,
+                    $rule,
+                );
 
                 if ($wasApplied) {
-                    $appliedSuggestionIds[] = $suggestion->getKey();
+                    $descriptionAppliedIds[] = $suggestion->getKey();
                 } else {
-                    $blockedSuggestionIds[] = $suggestion->getKey();
+                    $descriptionBlockedIds[] = $suggestion->getKey();
+                }
+            }
+
+            $brandSource = (string) $stagingRow->marca_original;
+            $brandPreview = $brandSource;
+            $brandIsInvalid = $this->brandIsInvalid($brandSource);
+            $brandAppliedIds = [];
+            $brandPendingReviewIds = [];
+            $brandBlockedIds = [];
+            $selectedBrandPreview = null;
+
+            foreach ($this->pendingSuggestions($stagingRow, self::BRAND_FIELD) as $suggestion) {
+                $rule = $suggestion->rule;
+                $proposedBrand = $this->proposedBrand($suggestion, $rule);
+
+                if ($brandIsInvalid
+                    || ! $this->isBrandSuggestionApplicable($brandSource, $proposedBrand, $rule)) {
+                    $brandBlockedIds[] = $suggestion->getKey();
+
+                    continue;
+                }
+
+                if ($selectedBrandPreview === null) {
+                    $selectedBrandPreview = $proposedBrand;
+                    $brandPreview = $proposedBrand;
+                } elseif ($proposedBrand !== $selectedBrandPreview) {
+                    $brandBlockedIds[] = $suggestion->getKey();
+
+                    continue;
+                }
+
+                if ($this->brandRuleRequiresReview($rule)) {
+                    $brandPendingReviewIds[] = $suggestion->getKey();
+                } else {
+                    $brandAppliedIds[] = $suggestion->getKey();
                 }
             }
 
             $payload = [
-                self::TARGET_FIELD => $combined,
-                'source_text' => $source,
-                'field' => self::TARGET_FIELD,
-                'applied_suggestion_ids' => $appliedSuggestionIds,
-                'blocked_suggestion_ids' => $blockedSuggestionIds,
-                'manual_review_suggestion_ids' => $manualReviewSuggestionIds,
-                'no_change_suggestion_ids' => $noChangeSuggestionIds,
+                self::DESCRIPTION_FIELD => $descriptionPreview,
+                self::BRAND_FIELD => $brandPreview,
+                'source_text' => $descriptionSource,
+                'source_brand' => $brandSource,
+                'field' => self::DESCRIPTION_FIELD,
+                'applied_suggestion_ids' => $descriptionAppliedIds,
+                'blocked_suggestion_ids' => $descriptionBlockedIds,
+                'manual_review_suggestion_ids' => $descriptionManualReviewIds,
+                'no_change_suggestion_ids' => $descriptionNoChangeIds,
+                'fields' => [
+                    self::DESCRIPTION_FIELD => [
+                        'source' => $descriptionSource,
+                        'preview' => $descriptionPreview,
+                        'applied_suggestion_ids' => $descriptionAppliedIds,
+                        'pending_review_suggestion_ids' => [],
+                        'blocked_suggestion_ids' => $descriptionBlockedIds,
+                        'manual_review_suggestion_ids' => $descriptionManualReviewIds,
+                        'no_change_suggestion_ids' => $descriptionNoChangeIds,
+                    ],
+                    self::BRAND_FIELD => [
+                        'source' => $brandSource,
+                        'preview' => $brandPreview,
+                        'applied_suggestion_ids' => $brandAppliedIds,
+                        'pending_review_suggestion_ids' => $brandPendingReviewIds,
+                        'blocked_suggestion_ids' => $brandBlockedIds,
+                    ],
+                ],
                 'generated_by' => class_basename(self::class),
             ];
             $preview = $this->withGenerationTime($stagingRow->normalized_preview, $payload);
-            $requiresReview = $sourceIsBlank
-                || $blockedSuggestionIds !== []
-                || $manualReviewSuggestionIds !== [];
+            $requiresReview = $descriptionIsBlank
+                || $brandIsInvalid
+                || $descriptionBlockedIds !== []
+                || $descriptionManualReviewIds !== []
+                || $brandPendingReviewIds !== []
+                || $brandBlockedIds !== [];
             $reviewReason = $stagingRow->review_reason;
 
-            if ($sourceIsBlank) {
+            if ($descriptionIsBlank) {
                 $reviewReason = $this->appendReviewReason(
                     $reviewReason,
                     'Nombre Sku original vacío',
                 );
             }
 
-            if ($blockedSuggestionIds !== [] || $manualReviewSuggestionIds !== []) {
+            if ($brandIsInvalid) {
+                $reviewReason = $this->appendReviewReason(
+                    $reviewReason,
+                    'Marca original vacía o no válida',
+                );
+            }
+
+            if ($descriptionBlockedIds !== [] || $descriptionManualReviewIds !== []) {
                 $reviewReason = $this->appendReviewReason(
                     $reviewReason,
                     'La vista previa contiene sugerencias pendientes de revisión',
                 );
             }
 
+            if ($brandPendingReviewIds !== [] || $brandBlockedIds !== []) {
+                $reviewReason = $this->appendReviewReason(
+                    $reviewReason,
+                    'La vista previa contiene sugerencias de marca pendientes de revisión',
+                );
+            }
+
+            $requiresReview = $stagingRow->requires_review || $requiresReview;
+
             $stagingRow->fill([
                 'normalized_preview' => $preview,
                 'status' => $this->statusFor(
-                    $source,
-                    $combined,
-                    $sourceIsBlank,
-                    $appliedSuggestionIds,
-                    $blockedSuggestionIds,
-                    $manualReviewSuggestionIds,
-                    $noChangeSuggestionIds,
+                    $descriptionSource,
+                    $descriptionPreview,
+                    $brandSource,
+                    $brandPreview,
+                    $descriptionIsBlank,
+                    $brandIsInvalid,
+                    $descriptionAppliedIds,
+                    $descriptionBlockedIds,
+                    $descriptionManualReviewIds,
+                    $descriptionNoChangeIds,
+                    $brandAppliedIds,
+                    $brandPendingReviewIds,
+                    $brandBlockedIds,
+                    $requiresReview,
                 ),
-                'requires_review' => $stagingRow->requires_review || $requiresReview,
+                'requires_review' => $requiresReview,
                 'review_reason' => $reviewReason,
             ]);
 
@@ -129,10 +215,10 @@ class ProductStagingPreviewComposer
     /**
      * @return Collection<int, NormalizationSuggestion>
      */
-    private function pendingSuggestions(ProductStagingRow $row): Collection
+    private function pendingSuggestions(ProductStagingRow $row, string $fieldName): Collection
     {
         return $row->suggestions()
-            ->where('field_name', self::TARGET_FIELD)
+            ->where('field_name', $fieldName)
             ->where('status', 'pending')
             ->with('rule')
             ->lockForUpdate()
@@ -158,7 +244,7 @@ class ProductStagingPreviewComposer
             ->values();
     }
 
-    private function isApplicable(?NormalizationRule $rule): bool
+    private function isDescriptionRuleApplicable(?NormalizationRule $rule): bool
     {
         return $rule !== null
             && $rule->active
@@ -166,13 +252,46 @@ class ProductStagingPreviewComposer
             && filled($rule->replacement_value)
             && $rule->is_automatic
             && ! $rule->requires_review
-            && (blank($rule->applies_to_field) || $rule->applies_to_field === self::TARGET_FIELD);
+            && (blank($rule->applies_to_field)
+                || $rule->applies_to_field === self::DESCRIPTION_FIELD);
+    }
+
+    private function isBrandSuggestionApplicable(
+        string $source,
+        ?string $proposedBrand,
+        ?NormalizationRule $rule,
+    ): bool {
+        return $rule !== null
+            && $rule->active
+            && $rule->applies_to_field === self::BRAND_FIELD
+            && $rule->rule_type !== 'no_change'
+            && filled($rule->detected_value)
+            && filled($proposedBrand)
+            && $this->brandsMatch($source, $rule->detected_value);
+    }
+
+    private function brandRuleRequiresReview(NormalizationRule $rule): bool
+    {
+        return $rule->requires_review
+            || ! $rule->is_automatic
+            || $rule->rule_type === 'manual_review';
+    }
+
+    private function proposedBrand(
+        NormalizationSuggestion $suggestion,
+        ?NormalizationRule $rule,
+    ): ?string {
+        if (filled($suggestion->suggested_value)) {
+            return $suggestion->suggested_value;
+        }
+
+        return filled($rule?->replacement_value) ? $rule->replacement_value : null;
     }
 
     /**
      * @return array{0: string, 1: bool}
      */
-    private function applyRule(string $text, NormalizationRule $rule): array
+    private function applyDescriptionRule(string $text, NormalizationRule $rule): array
     {
         $replacementCount = 0;
         $literal = preg_quote($rule->detected_value, '~');
@@ -187,10 +306,23 @@ class ProductStagingPreviewComposer
         return [$combined ?? $text, $combined !== null && $replacementCount > 0];
     }
 
+    private function brandsMatch(string $source, string $detectedValue): bool
+    {
+        return mb_strtolower(trim($source), 'UTF-8')
+            === mb_strtolower(trim($detectedValue), 'UTF-8');
+    }
+
+    private function brandIsInvalid(string $source): bool
+    {
+        $normalized = trim($source);
+
+        return $normalized === '' || $normalized === '0';
+    }
+
     /**
      * @param  array<string, mixed>|null  $currentPreview
-     * @param  array<string, array<int, int>|string>  $payload
-     * @return array<string, array<int, int>|string>
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
      */
     private function withGenerationTime(?array $currentPreview, array $payload): array
     {
@@ -211,37 +343,53 @@ class ProductStagingPreviewComposer
     }
 
     /**
-     * @param  array<int, int>  $appliedSuggestionIds
-     * @param  array<int, int>  $blockedSuggestionIds
-     * @param  array<int, int>  $manualReviewSuggestionIds
-     * @param  array<int, int>  $noChangeSuggestionIds
+     * @param  array<int, int>  $descriptionAppliedIds
+     * @param  array<int, int>  $descriptionBlockedIds
+     * @param  array<int, int>  $descriptionManualReviewIds
+     * @param  array<int, int>  $descriptionNoChangeIds
+     * @param  array<int, int>  $brandAppliedIds
+     * @param  array<int, int>  $brandPendingReviewIds
+     * @param  array<int, int>  $brandBlockedIds
      */
     private function statusFor(
-        string $source,
-        string $combined,
-        bool $sourceIsBlank,
-        array $appliedSuggestionIds,
-        array $blockedSuggestionIds,
-        array $manualReviewSuggestionIds,
-        array $noChangeSuggestionIds,
+        string $descriptionSource,
+        string $descriptionPreview,
+        string $brandSource,
+        string $brandPreview,
+        bool $descriptionIsBlank,
+        bool $brandIsInvalid,
+        array $descriptionAppliedIds,
+        array $descriptionBlockedIds,
+        array $descriptionManualReviewIds,
+        array $descriptionNoChangeIds,
+        array $brandAppliedIds,
+        array $brandPendingReviewIds,
+        array $brandBlockedIds,
+        bool $requiresReview,
     ): string {
-        if ($sourceIsBlank) {
+        if ($descriptionIsBlank || $brandIsInvalid) {
             return 'requires_review';
         }
 
-        if ($combined !== $source) {
+        if ($descriptionPreview !== $descriptionSource
+            || $brandPreview !== $brandSource
+            || $brandPendingReviewIds !== []) {
             return 'previewed';
         }
 
-        if ($blockedSuggestionIds !== [] || $manualReviewSuggestionIds !== []) {
+        if ($descriptionBlockedIds !== []
+            || $descriptionManualReviewIds !== []
+            || $brandBlockedIds !== []) {
             return 'requires_review';
         }
 
-        if ($appliedSuggestionIds !== [] || $noChangeSuggestionIds !== []) {
+        if ($descriptionAppliedIds !== []
+            || $descriptionNoChangeIds !== []
+            || $brandAppliedIds !== []) {
             return 'suggested';
         }
 
-        return 'analyzed';
+        return $requiresReview ? 'requires_review' : 'analyzed';
     }
 
     private function appendReviewReason(?string $currentReason, string $newReason): string

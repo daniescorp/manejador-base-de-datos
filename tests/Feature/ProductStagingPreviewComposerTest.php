@@ -7,6 +7,7 @@ use App\Models\NormalizationRule;
 use App\Models\NormalizationSuggestion;
 use App\Models\ProductChangeLog;
 use App\Models\ProductStagingRow;
+use App\Services\Normalization\ProductStagingAnalyzer;
 use App\Services\Normalization\ProductStagingPreviewComposer;
 use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -112,6 +113,30 @@ class ProductStagingPreviewComposerTest extends TestCase
         $this->assertSame([], $preview['blocked_suggestion_ids']);
         $this->assertSame([], $preview['manual_review_suggestion_ids']);
         $this->assertSame([], $preview['no_change_suggestion_ids']);
+        $this->assertSame($row->marca_original, $preview['source_brand']);
+        $this->assertSame($row->marca_original, $preview['marca_homologada']);
+        $this->assertEquals(
+            [
+                'source' => 'CARAMELOS LIMON',
+                'preview' => 'CARAMELOS LIMÓN',
+                'applied_suggestion_ids' => [$suggestion->getKey()],
+                'pending_review_suggestion_ids' => [],
+                'blocked_suggestion_ids' => [],
+                'manual_review_suggestion_ids' => [],
+                'no_change_suggestion_ids' => [],
+            ],
+            $preview['fields']['descripcion_catalogo'],
+        );
+        $this->assertEquals(
+            [
+                'source' => $row->marca_original,
+                'preview' => $row->marca_original,
+                'applied_suggestion_ids' => [],
+                'pending_review_suggestion_ids' => [],
+                'blocked_suggestion_ids' => [],
+            ],
+            $preview['fields']['marca_homologada'],
+        );
         $this->assertSame('ProductStagingPreviewComposer', $preview['generated_by']);
         $this->assertSame(now()->toISOString(), $preview['generated_at']);
     }
@@ -184,7 +209,7 @@ class ProductStagingPreviewComposerTest extends TestCase
             'replacement_value' => 'NORMALIZADO_FIELD',
         ]);
         $suggestions[] = $this->createSuggestion($row, $otherFieldRule, [
-            'field_name' => 'marca_homologada',
+            'field_name' => 'titulo_shopify',
             'suggestion_reason' => 'Otro campo protegido',
         ]);
         $snapshots = collect($suggestions)->mapWithKeys(
@@ -570,6 +595,306 @@ class ProductStagingPreviewComposerTest extends TestCase
         );
         $this->assertSame([], $preview['applied_suggestion_ids']);
         $this->assertSame('requires_review', $row->fresh()->status);
+    }
+
+    public function test_it_includes_an_automatic_brand_normalization_in_the_preview(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'CAFÉ MOLIDO',
+            'marca_original' => 'ARLISTAN',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+        ]);
+        $suggestion = $this->createSuggestion($row, $rule, [
+            'field_name' => 'marca_homologada',
+            'original_value' => 'ARLISTAN',
+            'suggested_value' => 'Arlistán',
+        ]);
+        $suggestionSnapshot = $suggestion->getAttributes();
+
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('ARLISTAN', $preview['source_brand']);
+        $this->assertSame('Arlistán', $preview['marca_homologada']);
+        $this->assertSame(
+            [$suggestion->getKey()],
+            $preview['fields']['marca_homologada']['applied_suggestion_ids'],
+        );
+        $this->assertSame(
+            [],
+            $preview['fields']['marca_homologada']['pending_review_suggestion_ids'],
+        );
+        $this->assertSame([], $preview['fields']['marca_homologada']['blocked_suggestion_ids']);
+        $this->assertSame([], $preview['applied_suggestion_ids']);
+        $this->assertSame('ARLISTAN', $row->marca_original);
+        $this->assertSame('previewed', $row->status);
+        $this->assertFalse($row->requires_review);
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertEquals($suggestionSnapshot, $suggestion->fresh()->getAttributes());
+    }
+
+    public function test_a_sensitive_brand_is_previewed_as_pending_review_not_applied(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'CAFÉ MOLIDO',
+            'marca_original' => 'ARLISTAN',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'is_automatic' => false,
+            'requires_review' => true,
+            'confidence_level' => 'contextual',
+        ]);
+        $suggestion = $this->createSuggestion($row, $rule, [
+            'field_name' => 'marca_homologada',
+            'original_value' => 'ARLISTAN',
+            'suggested_value' => 'Arlistán',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $brandPreview = $preview['fields']['marca_homologada'];
+
+        $this->assertSame('Arlistán', $preview['marca_homologada']);
+        $this->assertSame([], $brandPreview['applied_suggestion_ids']);
+        $this->assertSame(
+            [$suggestion->getKey()],
+            $brandPreview['pending_review_suggestion_ids'],
+        );
+        $this->assertSame([], $brandPreview['blocked_suggestion_ids']);
+        $this->assertSame('previewed', $row->status);
+        $this->assertTrue($row->requires_review);
+        $this->assertStringContainsString(
+            'sugerencias de marca pendientes de revisión',
+            $row->review_reason,
+        );
+        $this->assertSame('pending', $suggestion->fresh()->status);
+    }
+
+    public function test_it_composes_description_and_brand_without_touching_master_or_logs(): void
+    {
+        $masterProduct = MasterProduct::factory()->create([
+            'name' => 'Producto maestro protegido',
+            'marca_original' => 'Marca maestra original',
+            'marca_homologada' => 'Marca maestra homologada',
+        ]);
+        $row = ProductStagingRow::factory()
+            ->for($masterProduct, 'masterProduct')
+            ->create([
+                'nombre_sku_original' => 'CARAMELOS LIMON 50 GR',
+                'marca_original' => 'MANON',
+            ]);
+        $descriptionRule = $this->createRule([
+            'detected_value' => 'LIMON',
+            'replacement_value' => 'LIMÓN',
+            'rule_type' => 'accent',
+            'priority' => 10,
+        ]);
+        $brandRule = $this->createRule([
+            'detected_value' => 'MANON',
+            'replacement_value' => 'Manón',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'priority' => 20,
+        ]);
+        $descriptionSuggestion = $this->createSuggestion($row, $descriptionRule, [
+            'suggested_value' => 'CARAMELOS LIMÓN 50 GR',
+        ]);
+        $brandSuggestion = $this->createSuggestion($row, $brandRule, [
+            'field_name' => 'marca_homologada',
+            'original_value' => 'MANON',
+            'suggested_value' => 'Manón',
+        ]);
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $masterCount = MasterProduct::query()->count();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('CARAMELOS LIMÓN 50 GR', $preview['descripcion_catalogo']);
+        $this->assertSame('Manón', $preview['marca_homologada']);
+        $this->assertSame(
+            [$descriptionSuggestion->getKey()],
+            $preview['applied_suggestion_ids'],
+        );
+        $this->assertSame(
+            [$brandSuggestion->getKey()],
+            $preview['fields']['marca_homologada']['applied_suggestion_ids'],
+        );
+        $this->assertSame(
+            $preview['applied_suggestion_ids'],
+            $preview['fields']['descripcion_catalogo']['applied_suggestion_ids'],
+        );
+        $this->assertEquals($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($masterCount, MasterProduct::query()->count());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+        $this->assertSame('MANON', $row->fresh()->marca_original);
+    }
+
+    public function test_invalid_original_brands_create_a_safe_review_preview(): void
+    {
+        foreach ([null, '', '   ', '0', ' 0 '] as $brand) {
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => 'PRODUCTO SIN CAMBIOS',
+                'marca_original' => $brand,
+                'requires_review' => false,
+                'review_reason' => null,
+            ]);
+
+            $preview = $this->composer()->compose($row);
+            $row->refresh();
+
+            $this->assertSame((string) $brand, $preview['source_brand']);
+            $this->assertSame((string) $brand, $preview['marca_homologada']);
+            $this->assertSame([], $preview['fields']['marca_homologada']['applied_suggestion_ids']);
+            $this->assertSame(
+                [],
+                $preview['fields']['marca_homologada']['pending_review_suggestion_ids'],
+            );
+            $this->assertSame([], $preview['fields']['marca_homologada']['blocked_suggestion_ids']);
+            $this->assertSame('requires_review', $row->status);
+            $this->assertTrue($row->requires_review);
+            $this->assertStringContainsString(
+                'Marca original vacía o no válida',
+                $row->review_reason,
+            );
+            $this->assertNull($row->approved_at);
+            $this->assertNull($row->approved_by_id);
+        }
+    }
+
+    public function test_brand_preview_composition_is_idempotent(): void
+    {
+        Carbon::setTestNow('2026-08-19 15:00:00');
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'CAFÉ MOLIDO',
+            'marca_original' => 'ARLISTAN',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'is_automatic' => false,
+            'requires_review' => true,
+        ]);
+        $suggestion = $this->createSuggestion($row, $rule, [
+            'field_name' => 'marca_homologada',
+            'original_value' => 'ARLISTAN',
+            'suggested_value' => 'Arlistán',
+        ]);
+
+        $firstPreview = $this->composer()->compose($row);
+        $firstUpdatedAt = $row->fresh()->getRawOriginal('updated_at');
+        $suggestionSnapshot = $suggestion->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+        Carbon::setTestNow('2026-08-20 15:00:00');
+
+        $secondPreview = $this->composer()->compose($row);
+
+        $this->assertSame($firstPreview, $secondPreview);
+        $this->assertSame($firstUpdatedAt, $row->fresh()->getRawOriginal('updated_at'));
+        $this->assertEquals($suggestionSnapshot, $suggestion->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+    }
+
+    public function test_a_brand_no_change_rule_cannot_apply_a_replacement(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'VINO TINTO',
+            'marca_original' => 'MARCA CONFIRMADA',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'MARCA CONFIRMADA',
+            'replacement_value' => 'MARCA ALTERADA',
+            'rule_type' => 'no_change',
+            'applies_to_field' => 'marca_homologada',
+            'is_automatic' => true,
+            'requires_review' => false,
+        ]);
+        $suggestion = $this->createSuggestion($row, $rule, [
+            'field_name' => 'marca_homologada',
+            'original_value' => 'MARCA CONFIRMADA',
+            'suggested_value' => 'MARCA ALTERADA',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('MARCA CONFIRMADA', $preview['marca_homologada']);
+        $this->assertSame(
+            [],
+            $preview['fields']['marca_homologada']['applied_suggestion_ids'],
+        );
+        $this->assertSame(
+            [$suggestion->getKey()],
+            $preview['fields']['marca_homologada']['blocked_suggestion_ids'],
+        );
+        $this->assertSame('requires_review', $row->fresh()->status);
+    }
+
+    public function test_analyzer_and_composer_integrate_a_sensitive_brand_without_side_effects(): void
+    {
+        NormalizationRule::query()->update(['active' => false]);
+
+        $masterProduct = MasterProduct::factory()->create([
+            'name' => 'Producto maestro intacto en integración de marca',
+            'marca_original' => 'Marca maestra original',
+            'marca_homologada' => 'Marca maestra homologada',
+        ]);
+        $row = ProductStagingRow::factory()
+            ->for($masterProduct, 'masterProduct')
+            ->create([
+                'nombre_sku_original' => 'CAFÉ MOLIDO',
+                'marca_original' => 'ARLISTAN',
+            ]);
+        $rule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'Arlistán',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'is_automatic' => false,
+            'requires_review' => true,
+            'confidence_level' => 'contextual',
+        ]);
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        app(ProductStagingAnalyzer::class)->analyze($row);
+        $suggestion = NormalizationSuggestion::query()->where([
+            'product_staging_row_id' => $row->getKey(),
+            'normalization_rule_id' => $rule->getKey(),
+            'field_name' => 'marca_homologada',
+        ])->sole();
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('Arlistán', $preview['marca_homologada']);
+        $this->assertSame(
+            [],
+            $preview['fields']['marca_homologada']['applied_suggestion_ids'],
+        );
+        $this->assertSame(
+            [$suggestion->getKey()],
+            $preview['fields']['marca_homologada']['pending_review_suggestion_ids'],
+        );
+        $this->assertSame('pending', $suggestion->fresh()->status);
+        $this->assertSame('ARLISTAN', $row->marca_original);
+        $this->assertSame('previewed', $row->status);
+        $this->assertTrue($row->requires_review);
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertEquals($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
     }
 
     public function test_terminal_rows_cannot_be_recomposed(): void
