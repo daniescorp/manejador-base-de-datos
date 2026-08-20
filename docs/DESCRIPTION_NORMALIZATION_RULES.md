@@ -8,9 +8,13 @@ El asistente podrá ayudar a detectar patrones y proponer reglas, pero el usuari
 
 Las reglas de normalización no modifican directamente el dato original. Se aplican sobre campos homologados o de salida después de la previsualización y aprobación del usuario, y el sistema debe registrar cada cambio aplicado.
 
+Como último paso de composición, los previews textuales eliminan espacios múltiples, tabulaciones y saltos internos, y aplican `trim`. Esta limpieza se limita a `descripcion_catalogo` y `marca_homologada` dentro de `normalized_preview`; los valores originales importados se conservan sin cambios.
+
 ## Seeder inicial de reglas confirmadas
 
 Las reglas confirmadas cuentan con el seeder idempotente `NormalizationRuleSeeder`, destinado a poblar el catálogo inicial de `normalization_rules` sin duplicar ni eliminar reglas existentes. Esta carga solo registra reglas disponibles: no las aplica sobre productos ni reemplaza la previsualización y aprobación del usuario.
+
+La regla automática `CEBOLL` → `CEBOLLA` corrige ese token incompleto en `descripcion_catalogo`. La coincidencia exige la palabra completa, se aplica solamente al preview y conserva intactos `nombre_sku_original` y `raw_data`.
 
 ## Uso futuro de IA en normalización
 
@@ -226,7 +230,7 @@ Título Shopify sugerido: Vodka Petakon frutos rojos 750CC
 
 ### Regla para descripcion_catalogo
 
-Si `Marca` está informada y aparece dentro de `Nombre Sku`, se debe poder remover la marca de `descripcion_catalogo`. Toda remoción por lote deberá ofrecer una previsualización de los productos afectados.
+Si `Marca` está informada y aparece dentro de `Nombre Sku`, el compositor la remueve de `descripcion_catalogo` solamente en el preview. La coincidencia es case-insensitive y exige el token o la frase completa; luego se limpian los espacios. `marca_original` permanece intacta y `marca_homologada` queda separada para InDesign, Shopify y la app.
 
 ```text
 PETAKON + VODKA PETAKON FRUTOS ROJOS 750 CC
@@ -344,6 +348,10 @@ Ejemplos:
 ## Formato compacto de medidas para InDesign
 
 En `descripcion_catalogo`, toda medida destinada a InDesign debe quedar pegada al número para evitar que el valor y la unidad se separen en dos líneas. En packs, también se eliminan los espacios alrededor de `x`.
+
+El reconocimiento debe abarcar el token completo de unidad y aceptar variantes de plural y punto final. Por ejemplo, `500 Grs`, `1 KGS`, `750 CC.` y `1 LTS` se previsualizan como `500GR`, `1KG`, `750CC` y `1LT`. Nunca se reemplaza solamente un prefijo de la unidad, porque eso produciría resultados inválidos como `500GRs` o `1KGs`.
+
+`MX` → `MAX` es contextual, requiere revisión y solo coincide como token independiente. No coincide dentro de expresiones compactas como `80MX4UN`.
 
 Internamente, el sistema podrá conservar datos estructurados en campos separados, entre ellos:
 

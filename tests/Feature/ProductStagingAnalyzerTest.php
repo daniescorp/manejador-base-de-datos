@@ -114,6 +114,101 @@ class ProductStagingAnalyzerTest extends TestCase
         $this->assertSame('VINO TINTO 750CC', $suggestion->suggested_value);
     }
 
+    public function test_measurement_variants_are_replaced_as_complete_tokens(): void
+    {
+        $cases = [
+            ['500 GR', 'GALLETITAS 500 Grs', 'GALLETITAS 500GR'],
+            ['500 GR', 'GALLETITAS 500 GRS', 'GALLETITAS 500GR'],
+            ['500 GR', 'GALLETITAS 500 GR', 'GALLETITAS 500GR'],
+            ['500 GR', 'GALLETITAS 500 Gr', 'GALLETITAS 500GR'],
+            ['1 KG', 'HARINA 1 KGS', 'HARINA 1KG'],
+            ['1 KG', 'HARINA 1 Kgs', 'HARINA 1KG'],
+            ['1 KG', 'HARINA 1 KG', 'HARINA 1KG'],
+            ['1 KG', 'HARINA 1 K', 'HARINA 1KG'],
+            ['750 CC', 'VINO 750 CC.', 'VINO 750CC'],
+            ['750 CC', 'VINO 750 CC', 'VINO 750CC'],
+            ['750 CC', 'VINO 750 cc', 'VINO 750CC'],
+            ['750 CC', 'AMERICANO 950 CC.', 'AMERICANO 950CC'],
+            ['1 LT', 'JUGO 1 LTS', 'JUGO 1LT'],
+            ['1 LT', 'JUGO 1 LT', 'JUGO 1LT'],
+            ['1 LT', 'JUGO 1 L', 'JUGO 1LT'],
+        ];
+
+        foreach ($cases as [$detectedValue, $source, $expected]) {
+            NormalizationRule::query()->update(['active' => false]);
+            $rule = $this->createRule([
+                'detected_value' => $detectedValue,
+                'replacement_value' => str_replace(' ', '', $detectedValue),
+                'rule_type' => 'measurement',
+            ]);
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => $source,
+            ]);
+
+            $this->analyzer()->analyze($row);
+
+            $suggestion = $this->suggestionFor($row, $rule);
+
+            $this->assertSame($expected, $suggestion->suggested_value);
+            $this->assertSame('pending', $suggestion->status);
+            $this->assertNull($suggestion->reviewed_at);
+            $this->assertNull($suggestion->applied_at);
+        }
+    }
+
+    public function test_mx_is_contextual_and_does_not_match_inside_a_measurement(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'MX',
+            'replacement_value' => 'MAX',
+            'rule_type' => 'abbreviation',
+            'is_automatic' => false,
+            'requires_review' => true,
+            'confidence_level' => 'contextual',
+        ]);
+        $tokenRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'PAÑAL MX PROTECCIÓN',
+        ]);
+        $measurementRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'BOLSAS 80MX4UN',
+        ]);
+
+        $this->analyzer()->analyze($tokenRow);
+        $this->analyzer()->analyze($measurementRow);
+
+        $suggestion = $this->suggestionFor($tokenRow, $rule);
+
+        $this->assertSame('PAÑAL MAX PROTECCIÓN', $suggestion->suggested_value);
+        $this->assertSame('pending', $suggestion->status);
+        $this->assertSame('contextual', $suggestion->confidence_level);
+        $this->assertTrue($tokenRow->fresh()->requires_review);
+        $this->assertSame(0, $this->suggestionQuery($measurementRow, $rule)->count());
+    }
+
+    public function test_ceboll_generates_a_pending_suggestion_only_as_a_complete_word(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'CEBOLL',
+            'replacement_value' => 'CEBOLLA',
+            'rule_type' => 'abbreviation',
+        ]);
+        $tokenRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'PAPAS SABOR CREMA Y CEBOLL',
+        ]);
+        $longerWordRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'PRODUCTO CEBOLLETA',
+        ]);
+
+        $this->analyzer()->analyze($tokenRow);
+        $this->analyzer()->analyze($longerWordRow);
+
+        $suggestion = $this->suggestionFor($tokenRow, $rule);
+
+        $this->assertSame('PAPAS SABOR CREMA Y CEBOLLA', $suggestion->suggested_value);
+        $this->assertSame('pending', $suggestion->status);
+        $this->assertSame(0, $this->suggestionQuery($longerWordRow, $rule)->count());
+    }
+
     public function test_rell_creates_a_blocked_manual_review_suggestion(): void
     {
         $rule = $this->createRule([

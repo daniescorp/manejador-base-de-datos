@@ -168,9 +168,13 @@ El diccionario de homologación ya contempla reglas confirmadas para abreviatura
 
 El esquema deberá separar `marca_original`, `marca_homologada`, `nombre_original`, `nombre_sin_marca`, `descripcion_catalogo` y `titulo_shopify`, conservando siempre el dato original. Cuando la marca de la columna `Marca` también aparezca dentro de `Nombre Sku`, se podrá remover de `descripcion_catalogo` con previsualización para evitar duplicaciones, mientras Shopify u otros destinos podrán reconstruir el título con la marca.
 
+El compositor ya realiza esa separación en `normalized_preview`: quita coincidencias completas de la marca en `descripcion_catalogo`, conserva `marca_original` intacta y mantiene `marca_homologada` como campo independiente. No remueve coincidencias parciales ni aplica cambios a `master_products` antes de una aprobación futura.
+
 El Diccionario de Normalización permite administrar reglas para `descripcion_catalogo` y `marca_homologada`. El flujo de *staging* ya puede cotejar `marca_original` por igualdad exacta —sin distinguir mayúsculas y minúsculas ni los espacios de los extremos—, generar sugerencias para `marca_homologada` e incorporarlas a la previsualización. `marca_original` no se sobrescribe; casos como `ARLISTAN` → `Arlistán` o `MANON` → `Manón` se validan como marcas homologadas, y su aprobación definitiva hacia `master_products` queda para una etapa posterior.
 
 Para InDesign, `descripcion_catalogo` deberá usar medidas compactas como `750CC`, `500GR`, `1LT`, `1KG` y `4x30MT`. Los valores estructurados de contenido, unidad, cantidad y medida deberán conservarse por separado aunque la salida visual sea compacta.
+
+El motor de preview normaliza la unidad completa, incluidas variantes plurales y con punto (`Grs`, `KGS`, `CC.`, `LTS`), para evitar reemplazos parciales. La regla contextual `MX` → `MAX` exige un token independiente y revisión; las reglas `ARLISTAN` → `Arlistán` y `MANON` → `Manón` se limitan a `marca_homologada`, permanecen pendientes y no alteran `marca_original` ni `master_products`.
 
 ## Regla inicial para UXB = 0
 

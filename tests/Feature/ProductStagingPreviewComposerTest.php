@@ -90,6 +90,284 @@ class ProductStagingPreviewComposerTest extends TestCase
         $this->assertNull($row->approved_by_id);
     }
 
+    public function test_measurement_previews_do_not_leave_partial_unit_suffixes(): void
+    {
+        $cases = [
+            ['500 GR', 'GALLETITAS 500 Grs', 'GALLETITAS 500GR'],
+            ['1 KG', 'HARINA 1 KGS', 'HARINA 1KG'],
+            ['750 CC', 'VINO 750 CC.', 'VINO 750CC'],
+            ['1 LT', 'JUGO 1 LTS', 'JUGO 1LT'],
+        ];
+
+        foreach ($cases as [$detectedValue, $source, $expected]) {
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => $source,
+            ]);
+            $rule = $this->createRule([
+                'detected_value' => $detectedValue,
+                'replacement_value' => str_replace(' ', '', $detectedValue),
+                'rule_type' => 'measurement',
+            ]);
+            $suggestion = $this->createSuggestion($row, $rule, [
+                'suggested_value' => $expected,
+            ]);
+
+            $preview = $this->composer()->compose($row);
+            $row->refresh();
+
+            $this->assertSame($expected, $preview['descripcion_catalogo']);
+            $this->assertSame([$suggestion->getKey()], $preview['applied_suggestion_ids']);
+            $this->assertStringNotContainsString('GRs', $preview['descripcion_catalogo']);
+            $this->assertStringNotContainsString('KGs', $preview['descripcion_catalogo']);
+            $this->assertNull($row->approved_at);
+            $this->assertNull($row->approved_by_id);
+        }
+    }
+
+    public function test_ceboll_is_applied_to_preview_as_a_complete_word_only(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'CEBOLL',
+            'replacement_value' => 'CEBOLLA',
+            'rule_type' => 'abbreviation',
+        ]);
+        $tokenRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'PAPAS SABOR CREMA Y CEBOLL',
+        ]);
+        $longerWordRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'PRODUCTO CEBOLLETA',
+        ]);
+        $tokenSuggestion = $this->createSuggestion($tokenRow, $rule, [
+            'suggested_value' => 'PAPAS SABOR CREMA Y CEBOLLA',
+        ]);
+        $longerWordSuggestion = $this->createSuggestion($longerWordRow, $rule, [
+            'suggested_value' => 'PRODUCTO CEBOLLETA',
+        ]);
+
+        $tokenPreview = $this->composer()->compose($tokenRow);
+        $longerWordPreview = $this->composer()->compose($longerWordRow);
+
+        $this->assertSame('PAPAS SABOR CREMA Y CEBOLLA', $tokenPreview['descripcion_catalogo']);
+        $this->assertSame([$tokenSuggestion->getKey()], $tokenPreview['applied_suggestion_ids']);
+        $this->assertSame('PRODUCTO CEBOLLETA', $longerWordPreview['descripcion_catalogo']);
+        $this->assertSame([$longerWordSuggestion->getKey()], $longerWordPreview['blocked_suggestion_ids']);
+    }
+
+    public function test_it_removes_a_complete_brand_from_description_without_mutating_protected_data(): void
+    {
+        $rawData = ['Nombre Sku' => 'Papas fritas TIYUCA CREMA Y CEBOLLA 140GR'];
+        $masterProduct = MasterProduct::factory()->create();
+        $row = ProductStagingRow::factory()
+            ->for($masterProduct, 'masterProduct')
+            ->create([
+                'nombre_sku_original' => 'Papas fritas TIYUCA CREMA Y CEBOLLA 140GR',
+                'marca_original' => 'TIYUCA',
+                'raw_data' => $rawData,
+            ]);
+        $rule = $this->createRule([
+            'detected_value' => 'TEXTO_AUSENTE',
+            'replacement_value' => 'SIN_CAMBIO',
+            'rule_type' => 'no_change',
+            'is_automatic' => false,
+            'requires_preview' => false,
+        ]);
+        $suggestion = $this->createSuggestion($row, $rule);
+        $rowSnapshot = $row->fresh()->only(['nombre_sku_original', 'marca_original', 'raw_data']);
+        $suggestionSnapshot = $suggestion->fresh()->getAttributes();
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('Papas fritas CREMA Y CEBOLLA 140GR', $preview['descripcion_catalogo']);
+        $this->assertSame('TIYUCA', $preview['marca_homologada']);
+        $this->assertSame($rowSnapshot, $row->only(['nombre_sku_original', 'marca_original', 'raw_data']));
+        $this->assertEquals($suggestionSnapshot, $suggestion->fresh()->getAttributes());
+        $this->assertEquals($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertSame('pending', $suggestion->fresh()->status);
+    }
+
+    public function test_brand_removal_is_case_insensitive_removes_repetitions_and_cleans_spaces(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'Papas   Tiyuca crema tiyuca 140GR',
+            'marca_original' => 'TIYUCA',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('Papas crema 140GR', $preview['descripcion_catalogo']);
+        $this->assertStringNotContainsString('  ', $preview['descripcion_catalogo']);
+        $this->assertSame('TIYUCA', $preview['marca_homologada']);
+    }
+
+    public function test_it_removes_a_complete_multi_word_brand(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'VINO TRES PLUMAS MALBEC 750CC',
+            'marca_original' => 'TRES PLUMAS',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('VINO MALBEC 750CC', $preview['descripcion_catalogo']);
+        $this->assertSame('TRES PLUMAS', $preview['marca_homologada']);
+    }
+
+    public function test_it_does_not_remove_a_partial_brand_match(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'GIRASOL ACEITE 900CC',
+            'marca_original' => 'SOL',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('GIRASOL ACEITE 900CC', $preview['descripcion_catalogo']);
+        $this->assertSame('SOL', $preview['marca_homologada']);
+    }
+
+    public function test_invalid_or_blank_original_brands_do_not_remove_description_text(): void
+    {
+        foreach ([null, '', '0'] as $brand) {
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => 'PRODUCTO 0 SIN MARCA',
+                'marca_original' => $brand,
+            ]);
+
+            $preview = $this->composer()->compose($row);
+
+            $this->assertSame('PRODUCTO 0 SIN MARCA', $preview['descripcion_catalogo']);
+        }
+    }
+
+    public function test_brand_removal_uses_the_homologated_brand_preview(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'CAFÉ ARLISTAN 170GR',
+            'marca_original' => 'ARLISTAN',
+        ]);
+        $brandRule = $this->createRule([
+            'detected_value' => 'ARLISTAN',
+            'replacement_value' => 'ARLISTÁN',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+        ]);
+        $this->createSuggestion($row, $brandRule, [
+            'field_name' => 'marca_homologada',
+            'original_value' => 'ARLISTAN',
+            'suggested_value' => 'ARLISTÁN',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('CAFÉ 170GR', $preview['descripcion_catalogo']);
+        $this->assertSame('ARLISTÁN', $preview['marca_homologada']);
+    }
+
+    public function test_it_keeps_the_description_when_brand_removal_would_leave_it_too_short(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'X TIYUCA',
+            'marca_original' => 'TIYUCA',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('X TIYUCA', $preview['descripcion_catalogo']);
+    }
+
+    public function test_it_normalizes_preview_whitespace_without_mutating_original_data(): void
+    {
+        $descriptionSource = " \tALFAJOR   LIMON\n  50    GRS  ";
+        $brandSource = "  TRES   PLUMAS\t ";
+        $rawData = [
+            'Nombre Sku' => $descriptionSource,
+            'Marca' => $brandSource,
+            'unchanged' => "valor   original\tcon espacios",
+        ];
+        $masterProduct = MasterProduct::factory()->create([
+            'name' => 'Producto maestro protegido durante limpieza de preview',
+        ]);
+        $row = ProductStagingRow::factory()
+            ->for($masterProduct, 'masterProduct')
+            ->create([
+                'nombre_sku_original' => $descriptionSource,
+                'marca_original' => $brandSource,
+                'raw_data' => $rawData,
+            ]);
+        $brandRule = $this->createRule([
+            'detected_value' => trim($brandSource),
+            'replacement_value' => 'TRES   PLUMAS',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'is_automatic' => false,
+            'requires_review' => true,
+            'confidence_level' => 'contextual',
+        ]);
+        $suggestion = $this->createSuggestion($row, $brandRule, [
+            'field_name' => 'marca_homologada',
+            'original_value' => $brandSource,
+            'suggested_value' => "  TRES   PLUMAS\t ",
+        ]);
+        $rawDataSnapshot = $row->fresh()->raw_data;
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('ALFAJOR LIMON 50 GRS', $preview['descripcion_catalogo']);
+        $this->assertSame('TRES PLUMAS', $preview['marca_homologada']);
+        $this->assertSame('ALFAJOR LIMON 50 GRS', $preview['fields']['descripcion_catalogo']['preview']);
+        $this->assertSame('TRES PLUMAS', $preview['fields']['marca_homologada']['preview']);
+        $this->assertSame($descriptionSource, $preview['source_text']);
+        $this->assertSame($brandSource, $preview['source_brand']);
+        $this->assertSame($descriptionSource, $row->nombre_sku_original);
+        $this->assertSame($brandSource, $row->marca_original);
+        $this->assertSame($rawDataSnapshot, $row->raw_data);
+        $this->assertSame('pending', $suggestion->fresh()->status);
+        $this->assertNull($suggestion->fresh()->reviewed_at);
+        $this->assertNull($suggestion->fresh()->applied_at);
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertEquals($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+    }
+
+    public function test_whitespace_cleanup_runs_after_existing_description_rules(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => '  YERBA  CBSE C/LIMON   500 Grs  ',
+        ]);
+        $slashRule = $this->createRule([
+            'detected_value' => 'C/LIMON',
+            'replacement_value' => 'con limón',
+            'rule_type' => 'slash_abbreviation',
+            'priority' => 10,
+        ]);
+        $measurementRule = $this->createRule([
+            'detected_value' => '500 GR',
+            'replacement_value' => '500GR',
+            'rule_type' => 'measurement',
+            'priority' => 20,
+        ]);
+        $this->createSuggestion($row, $slashRule);
+        $this->createSuggestion($row, $measurementRule);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('YERBA CBSE con limón 500GR', $preview['descripcion_catalogo']);
+        $this->assertSame(
+            '  YERBA  CBSE C/LIMON   500 Grs  ',
+            $row->fresh()->nombre_sku_original,
+        );
+    }
+
     public function test_it_persists_the_expected_normalized_preview_structure(): void
     {
         Carbon::setTestNow('2026-08-19 14:30:00');
@@ -755,7 +1033,7 @@ class ProductStagingPreviewComposerTest extends TestCase
             $row->refresh();
 
             $this->assertSame((string) $brand, $preview['source_brand']);
-            $this->assertSame((string) $brand, $preview['marca_homologada']);
+            $this->assertSame(trim((string) $brand), $preview['marca_homologada']);
             $this->assertSame([], $preview['fields']['marca_homologada']['applied_suggestion_ids']);
             $this->assertSame(
                 [],

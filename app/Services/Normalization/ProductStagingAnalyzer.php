@@ -18,6 +18,10 @@ class ProductStagingAnalyzer
         'ignored',
     ];
 
+    public function __construct(
+        private readonly DescriptionRulePattern $descriptionRulePattern,
+    ) {}
+
     public function analyze(ProductStagingRow $row): void
     {
         DB::transaction(function () use ($row): void {
@@ -34,7 +38,7 @@ class ProductStagingAnalyzer
                 $reviewReasons[] = 'Nombre Sku original vacío';
             } else {
                 foreach ($this->activeDescriptionRules() as $rule) {
-                    if (! $this->matchesDescription($descriptionSource, $rule->detected_value)) {
+                    if (! $this->matchesDescription($descriptionSource, $rule)) {
                         continue;
                     }
 
@@ -159,13 +163,13 @@ class ProductStagingAnalyzer
         $suggestion->save();
     }
 
-    private function matchesDescription(string $source, ?string $detectedValue): bool
+    private function matchesDescription(string $source, NormalizationRule $rule): bool
     {
-        if (blank($detectedValue)) {
+        if (blank($rule->detected_value)) {
             return false;
         }
 
-        return preg_match($this->literalPattern($detectedValue), $source) === 1;
+        return $this->descriptionRulePattern->matches($source, $rule);
     }
 
     private function matchesBrand(string $source, ?string $detectedValue): bool
@@ -205,18 +209,7 @@ class ProductStagingAnalyzer
             return $rule->replacement_value;
         }
 
-        return preg_replace_callback(
-            $this->literalPattern($rule->detected_value),
-            static fn (): string => $rule->replacement_value,
-            $source,
-        ) ?? $source;
-    }
-
-    private function literalPattern(string $detectedValue): string
-    {
-        $literal = preg_quote($detectedValue, '~');
-
-        return "~{$literal}~iu";
+        return $this->descriptionRulePattern->replace($source, $rule)[0];
     }
 
     private function suggestionReason(NormalizationRule $rule, string $fieldName): string

@@ -274,6 +274,48 @@ class NormalizationRuleSeederTest extends TestCase
         }
     }
 
+    public function test_ceboll_is_seeded_as_an_automatic_exact_word_correction(): void
+    {
+        $rule = $this->rule('CEBOLL', 'abbreviation');
+
+        $this->assertSame('CEBOLLA', $rule->replacement_value);
+        $this->assertTrue($rule->is_automatic);
+        $this->assertTrue($rule->requires_preview);
+        $this->assertFalse($rule->requires_review);
+        $this->assertSame('high', $rule->confidence_level);
+        $this->assertStringContainsString('palabra incompleta', $rule->notes);
+    }
+
+    public function test_mx_is_seeded_as_a_contextual_review_rule(): void
+    {
+        $rule = $this->rule('MX', 'abbreviation');
+
+        $this->assertSame('MAX', $rule->replacement_value);
+        $this->assertFalse($rule->is_automatic);
+        $this->assertTrue($rule->requires_preview);
+        $this->assertTrue($rule->requires_review);
+        $this->assertSame('contextual', $rule->confidence_level);
+        $this->assertStringContainsString('80MX4UN', $rule->notes);
+    }
+
+    public function test_brand_accent_rules_are_seeded_for_manual_review(): void
+    {
+        foreach (['ARLISTAN' => 'Arlistán', 'MANON' => 'Manón'] as $detectedValue => $replacementValue) {
+            $rule = NormalizationRule::query()
+                ->where('detected_value', $detectedValue)
+                ->where('rule_type', 'brand_normalization')
+                ->where('applies_to_field', 'marca_homologada')
+                ->firstOrFail();
+
+            $this->assertSame($replacementValue, $rule->replacement_value);
+            $this->assertFalse($rule->is_automatic);
+            $this->assertTrue($rule->requires_preview);
+            $this->assertTrue($rule->requires_review);
+            $this->assertSame('contextual', $rule->confidence_level);
+            $this->assertTrue($rule->active);
+        }
+    }
+
     public function test_paper_abbreviations_are_contextual(): void
     {
         foreach (['HS' => 'Hoja Simple', 'DH' => 'Doble Hoja', 'TH' => 'Triple Hoja'] as $detectedValue => $replacementValue) {

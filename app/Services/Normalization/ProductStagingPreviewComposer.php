@@ -23,6 +23,10 @@ class ProductStagingPreviewComposer
         'excluded',
     ];
 
+    public function __construct(
+        private readonly DescriptionRulePattern $descriptionRulePattern,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -108,6 +112,22 @@ class ProductStagingPreviewComposer
                     $brandPendingReviewIds[] = $suggestion->getKey();
                 } else {
                     $brandAppliedIds[] = $suggestion->getKey();
+                }
+            }
+
+            $descriptionPreview = $this->normalizePreviewWhitespace($descriptionPreview);
+            $brandPreview = $this->normalizePreviewWhitespace($brandPreview);
+
+            if (! $brandIsInvalid) {
+                foreach (array_unique([
+                    $brandPreview,
+                    $brandSource,
+                    (string) data_get($stagingRow->normalized_preview, 'source_brand'),
+                ]) as $descriptionBrand) {
+                    $descriptionPreview = $this->removeCompleteBrandFromDescription(
+                        $descriptionPreview,
+                        $descriptionBrand,
+                    );
                 }
             }
 
@@ -293,17 +313,7 @@ class ProductStagingPreviewComposer
      */
     private function applyDescriptionRule(string $text, NormalizationRule $rule): array
     {
-        $replacementCount = 0;
-        $literal = preg_quote($rule->detected_value, '~');
-        $combined = preg_replace_callback(
-            "~{$literal}~iu",
-            static fn (): string => $rule->replacement_value,
-            $text,
-            -1,
-            $replacementCount,
-        );
-
-        return [$combined ?? $text, $combined !== null && $replacementCount > 0];
+        return $this->descriptionRulePattern->replace($text, $rule);
     }
 
     private function brandsMatch(string $source, string $detectedValue): bool
@@ -317,6 +327,43 @@ class ProductStagingPreviewComposer
         $normalized = trim($source);
 
         return $normalized === '' || $normalized === '0';
+    }
+
+    private function normalizePreviewWhitespace(string $text): string
+    {
+        return preg_replace('/\s+/u', ' ', trim($text)) ?? trim($text);
+    }
+
+    private function removeCompleteBrandFromDescription(string $description, string $brand): string
+    {
+        $normalizedDescription = $this->normalizePreviewWhitespace($description);
+        $normalizedBrand = $this->normalizePreviewWhitespace($brand);
+
+        if ($this->brandIsInvalid($normalizedBrand)) {
+            return $normalizedDescription;
+        }
+
+        $brandPattern = preg_replace('/\s+/u', '\\s+', preg_quote($normalizedBrand, '~'));
+
+        if ($brandPattern === null) {
+            return $normalizedDescription;
+        }
+
+        $withoutBrand = preg_replace(
+            "~(?<![\\p{L}\\p{N}_]){$brandPattern}(?![\\p{L}\\p{N}_])~iu",
+            ' ',
+            $normalizedDescription,
+        );
+
+        if ($withoutBrand === null) {
+            return $normalizedDescription;
+        }
+
+        $withoutBrand = $this->normalizePreviewWhitespace($withoutBrand);
+
+        return mb_strlen($withoutBrand, 'UTF-8') >= 3
+            ? $withoutBrand
+            : $normalizedDescription;
     }
 
     /**

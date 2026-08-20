@@ -12,7 +12,7 @@ class NormalizationRuleSeeder extends Seeder
 {
     use WithoutModelEvents;
 
-    public const RULE_COUNT = 101;
+    public const RULE_COUNT = 105;
 
     public function run(): void
     {
@@ -175,6 +175,45 @@ class NormalizationRuleSeeder extends Seeder
             ),
             ...$this->replacementRules(
                 replacements: [
+                    'CEBOLL' => 'CEBOLLA',
+                ],
+                ruleType: 'abbreviation',
+                notes: 'Corrección de palabra incompleta detectada en descripción; ejemplo: sabor crema y cebolla.',
+            ),
+            ...$this->replacementRules(
+                replacements: [
+                    'MX' => 'MAX',
+                ],
+                ruleType: 'abbreviation',
+                isAutomatic: false,
+                requiresReview: true,
+                confidenceLevel: 'contextual',
+                notes: 'Aplicar solo cuando MX funcione como abreviatura de MAX en descripción. No aplicar dentro de medidas como 80MX4UN.',
+            ),
+            ...$this->replacementRules(
+                replacements: [
+                    'ARLISTAN' => 'Arlistán',
+                ],
+                ruleType: 'brand_normalization',
+                isAutomatic: false,
+                requiresReview: true,
+                confidenceLevel: 'contextual',
+                notes: 'Marca con escritura oficial a validar antes de aplicar masivamente.',
+                appliesToField: 'marca_homologada',
+            ),
+            ...$this->replacementRules(
+                replacements: [
+                    'MANON' => 'Manón',
+                ],
+                ruleType: 'brand_normalization',
+                isAutomatic: false,
+                requiresReview: true,
+                confidenceLevel: 'contextual',
+                notes: 'Marca con posible tilde; validar escritura oficial antes de aplicar masivamente.',
+                appliesToField: 'marca_homologada',
+            ),
+            ...$this->replacementRules(
+                replacements: [
                     '750 CC' => '750CC',
                     '500 GR' => '500GR',
                     '1 LT' => '1LT',
@@ -240,6 +279,7 @@ class NormalizationRuleSeeder extends Seeder
         bool $requiresReview = false,
         string $confidenceLevel = 'high',
         ?string $notes = null,
+        string $appliesToField = 'descripcion_catalogo',
     ): array {
         $rules = [];
 
@@ -249,7 +289,7 @@ class NormalizationRuleSeeder extends Seeder
                 'detected_value' => $detectedValue,
                 'replacement_value' => $replacementValue,
                 'rule_type' => $ruleType,
-                'applies_to_field' => 'descripcion_catalogo',
+                'applies_to_field' => $appliesToField,
                 'context' => $context,
                 'priority' => 100,
                 'is_automatic' => $isAutomatic,
