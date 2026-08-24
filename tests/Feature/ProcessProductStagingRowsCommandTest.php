@@ -96,7 +96,7 @@ class ProcessProductStagingRowsCommandTest extends TestCase
         $this->assertSame(1, $result['previewed_rows']);
         $this->assertSame(0, $result['previews_before']);
         $this->assertSame(1, $result['previews_after']);
-        $this->assertSame('PRODUCTO NORMALIZADO', $row->fresh()->normalized_preview['descripcion_catalogo']);
+        $this->assertSame('Producto normalizado', $row->fresh()->normalized_preview['descripcion_catalogo']);
     }
 
     public function test_only_all_runs_analyzer_then_preview_composer(): void
@@ -136,6 +136,54 @@ class ProcessProductStagingRowsCommandTest extends TestCase
             ->whereIn('id', $rows->pluck('id')->all())
             ->whereNotNull('analyzed_at')
             ->count());
+    }
+
+    public function test_command_processes_contextual_envelope_counts_and_ns_residuals(): void
+    {
+        $batch = $this->createBatch();
+        $rawData = ['Nombre Sku' => 'TE TARAGUI S/ENS.  50s'];
+        $row = $this->createRow($batch, [
+            'nombre_sku_original' => 'TE TARAGUI S/ENS.  50s',
+            'marca_original' => 'TARAGUI',
+            'raw_data' => $rawData,
+        ]);
+        $this->createRule([
+            'detected_value' => 'S/E',
+            'replacement_value' => 'Sin ensobrar',
+            'rule_type' => 'slash_abbreviation',
+            'applies_to_field' => 'descripcion_catalogo',
+            'priority' => 10,
+        ]);
+        $this->createRule([
+            'detected_value' => 'CANTIDAD+S',
+            'replacement_value' => 'sobres',
+            'rule_type' => 'contextual_abbreviation',
+            'context' => 'te_infusiones_ensobrados',
+            'applies_to_field' => 'descripcion_catalogo',
+            'priority' => 20,
+        ]);
+        $this->createRule([
+            'detected_value' => 'TARAGUI',
+            'replacement_value' => 'Taragüi',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'is_automatic' => false,
+            'requires_review' => true,
+            'confidence_level' => 'contextual',
+            'priority' => 30,
+        ]);
+        $originalSnapshot = $row->only(['nombre_sku_original', 'marca_original', 'raw_data']);
+
+        $result = $this->runJson($batch, ['--id' => $row->getKey()]);
+        $row->refresh();
+
+        $this->assertSame(1, $result['processed_rows']);
+        $this->assertSame('Té sin ensobrar 50 sobres', $row->normalized_preview['descripcion_catalogo']);
+        $this->assertSame('Taragüi', $row->normalized_preview['marca_homologada']);
+        $this->assertSame($originalSnapshot, $row->only(['nombre_sku_original', 'marca_original', 'raw_data']));
+        $this->assertSame(3, $row->suggestions()->where('status', 'pending')->count());
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
     }
 
     public function test_id_filters_the_processing_to_one_staging_row(): void
@@ -279,7 +327,7 @@ class ProcessProductStagingRowsCommandTest extends TestCase
         $row->refresh();
 
         $this->assertSame('descripcion_catalogo', $row->suggestions()->sole()->field_name);
-        $this->assertSame('PRODUCTO NORMALIZADO', $row->normalized_preview['descripcion_catalogo']);
+        $this->assertSame('Producto normalizado', $row->normalized_preview['descripcion_catalogo']);
         $this->assertSame('PRODUCTO TOKEN', $row->nombre_sku_original);
     }
 

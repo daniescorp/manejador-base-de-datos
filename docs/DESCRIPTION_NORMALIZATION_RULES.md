@@ -16,6 +16,10 @@ Las reglas confirmadas cuentan con el seeder idempotente `NormalizationRuleSeede
 
 La regla automática `CEBOLL` → `CEBOLLA` corrige ese token incompleto en `descripcion_catalogo`. La coincidencia exige la palabra completa, se aplica solamente al preview y conserva intactos `nombre_sku_original` y `raw_data`.
 
+En contexto de té, infusiones o productos ensobrados, una cantidad terminada en `s` (`25s`, `50s`, `100s`) se previsualiza como `25 sobres`, `50 sobres` o `100 sobres`; fuera de ese contexto no se interpreta automáticamente. Cuando una regla ya produjo `sin ensobrar`, el compositor elimina residuos completos `NS` o `NS.` y vuelve a limpiar los espacios. Los datos originales permanecen intactos.
+
+En ese mismo contexto, el token completo `TE` se presenta como `Té`; nunca se reemplaza dentro de palabras como `DETERGENTE` o `PROTECTOR`. `descripcion_catalogo` aplica una capitalización comercial básica y conserva tokens compactos como `140GR`, `750CC`, `1KG`, `80MX4UN` y `TACC`. Las variantes de marca `TARAGUI` y `TARAGÜI` se previsualizan como `Taragüi` mediante reglas de marca que requieren revisión, sin alterar `marca_original`.
+
 ## Uso futuro de IA en normalización
 
 La IA podrá ayudar a detectar y sugerir normalizaciones, pero las reglas confirmadas por el usuario y la previsualización tendrán prioridad. La IA no deberá aplicar cambios automáticos sobre `descripcion_catalogo` sin aprobación.

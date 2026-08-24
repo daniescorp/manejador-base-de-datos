@@ -79,7 +79,7 @@ class ProductStagingPreviewComposerTest extends TestCase
         $preview = $this->composer()->compose($row);
         $row->refresh();
 
-        $this->assertSame('ALFAJOR LIMÓN 50GR', $preview['descripcion_catalogo']);
+        $this->assertSame('Alfajor limón 50GR', $preview['descripcion_catalogo']);
         $this->assertSame(
             [$accentSuggestion->getKey(), $measurementSuggestion->getKey()],
             $preview['applied_suggestion_ids'],
@@ -93,10 +93,10 @@ class ProductStagingPreviewComposerTest extends TestCase
     public function test_measurement_previews_do_not_leave_partial_unit_suffixes(): void
     {
         $cases = [
-            ['500 GR', 'GALLETITAS 500 Grs', 'GALLETITAS 500GR'],
-            ['1 KG', 'HARINA 1 KGS', 'HARINA 1KG'],
-            ['750 CC', 'VINO 750 CC.', 'VINO 750CC'],
-            ['1 LT', 'JUGO 1 LTS', 'JUGO 1LT'],
+            ['500 GR', 'GALLETITAS 500 Grs', 'Galletitas 500GR'],
+            ['1 KG', 'HARINA 1 KGS', 'Harina 1KG'],
+            ['750 CC', 'VINO 750 CC.', 'Vino 750CC'],
+            ['1 LT', 'JUGO 1 LTS', 'Jugo 1LT'],
         ];
 
         foreach ($cases as [$detectedValue, $source, $expected]) {
@@ -124,6 +124,175 @@ class ProductStagingPreviewComposerTest extends TestCase
         }
     }
 
+    public function test_it_removes_ns_residuals_only_after_sin_ensobrar_and_cleans_spaces(): void
+    {
+        foreach (['TE sin ensobrar NS. 50 sobres', 'TE sin ensobrar NS 50 sobres'] as $source) {
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => $source,
+            ]);
+
+            $preview = $this->composer()->compose($row);
+
+            $this->assertSame('Té sin ensobrar 50 sobres', $preview['descripcion_catalogo']);
+            $this->assertStringNotContainsString('  ', $preview['descripcion_catalogo']);
+        }
+
+        $unrelatedRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'PRODUCTO NS. 50 UNIDADES',
+        ]);
+
+        $unrelatedPreview = $this->composer()->compose($unrelatedRow);
+
+        $this->assertSame('Producto ns. 50 unidades', $unrelatedPreview['descripcion_catalogo']);
+    }
+
+    public function test_it_composes_contextual_envelope_counts_and_preserves_original_data(): void
+    {
+        $rawData = ['Nombre Sku' => 'TE TARAGUI S/ENS.  50s'];
+        $masterProduct = MasterProduct::factory()->create();
+        $row = ProductStagingRow::factory()
+            ->for($masterProduct, 'masterProduct')
+            ->create([
+                'nombre_sku_original' => 'TE TARAGUI S/ENS.  50s',
+                'marca_original' => 'TARAGUI',
+                'raw_data' => $rawData,
+            ]);
+        $sinEnsobrarRule = $this->createRule([
+            'detected_value' => 'S/E',
+            'replacement_value' => 'Sin ensobrar',
+            'rule_type' => 'slash_abbreviation',
+            'priority' => 10,
+        ]);
+        $envelopeRule = $this->createRule([
+            'detected_value' => 'CANTIDAD+S',
+            'replacement_value' => 'sobres',
+            'rule_type' => 'contextual_abbreviation',
+            'context' => 'te_infusiones_ensobrados',
+            'priority' => 20,
+        ]);
+        $sinEnsobrarSuggestion = $this->createSuggestion($row, $sinEnsobrarRule);
+        $envelopeSuggestion = $this->createSuggestion($row, $envelopeRule);
+        $rowSnapshot = $row->fresh()->only(['nombre_sku_original', 'marca_original', 'raw_data']);
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('Té sin ensobrar 50 sobres', $preview['descripcion_catalogo']);
+        $this->assertSame('TARAGUI', $preview['marca_homologada']);
+        $this->assertSame(
+            [$sinEnsobrarSuggestion->getKey(), $envelopeSuggestion->getKey()],
+            $preview['applied_suggestion_ids'],
+        );
+        $this->assertSame($rowSnapshot, $row->only(['nombre_sku_original', 'marca_original', 'raw_data']));
+        $this->assertEquals($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertSame('pending', $sinEnsobrarSuggestion->fresh()->status);
+        $this->assertSame('pending', $envelopeSuggestion->fresh()->status);
+    }
+
+    public function test_contextual_envelope_counts_support_expected_quantities_and_reject_other_products(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'CANTIDAD+S',
+            'replacement_value' => 'sobres',
+            'rule_type' => 'contextual_abbreviation',
+            'context' => 'te_infusiones_ensobrados',
+        ]);
+
+        foreach ([25, 50, 100] as $quantity) {
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => "INFUSIÓN {$quantity}s",
+            ]);
+            $suggestion = $this->createSuggestion($row, $rule);
+
+            $preview = $this->composer()->compose($row);
+
+            $this->assertSame("Infusión {$quantity} sobres", $preview['descripcion_catalogo']);
+            $this->assertSame([$suggestion->getKey()], $preview['applied_suggestion_ids']);
+        }
+
+        $outsideContext = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'TORNILLOS 50s ACERO',
+        ]);
+        $outsideSuggestion = $this->createSuggestion($outsideContext, $rule);
+
+        $outsidePreview = $this->composer()->compose($outsideContext);
+
+        $this->assertSame('Tornillos 50s acero', $outsidePreview['descripcion_catalogo']);
+        $this->assertSame([$outsideSuggestion->getKey()], $outsidePreview['blocked_suggestion_ids']);
+    }
+
+    public function test_basic_commercial_capitalization_preserves_compact_units_and_tacc(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'Papas fritas CREMA Y CEBOLLA 140GR 750CC 1KG 80MX4UN SIN TACC',
+            'marca_original' => 'MARCA AUSENTE',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame(
+            'Papas fritas crema y cebolla 140GR 750CC 1KG 80MX4UN sin TACC',
+            $preview['descripcion_catalogo'],
+        );
+    }
+
+    public function test_te_is_accented_only_as_a_complete_token_in_tea_context(): void
+    {
+        $teaRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'TE Sin ensobrar 50 sobres',
+            'marca_original' => 'MARCA AUSENTE',
+        ]);
+        $otherRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'DETERGENTE Protector TENSIOMETRO 750CC',
+            'marca_original' => 'MARCA AUSENTE',
+        ]);
+
+        $teaPreview = $this->composer()->compose($teaRow);
+        $otherPreview = $this->composer()->compose($otherRow);
+
+        $this->assertSame('Té sin ensobrar 50 sobres', $teaPreview['descripcion_catalogo']);
+        $this->assertSame('Detergente protector tensiometro 750CC', $otherPreview['descripcion_catalogo']);
+        $this->assertStringNotContainsString('Té', $otherPreview['descripcion_catalogo']);
+    }
+
+    public function test_taragui_variants_are_homologated_and_removed_from_description_preview(): void
+    {
+        foreach (['TARAGUI', 'TARAGÜI'] as $detectedValue) {
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => "TE {$detectedValue} Sin ensobrar 50 sobres",
+                'marca_original' => $detectedValue,
+                'raw_data' => ['Marca' => $detectedValue],
+            ]);
+            $rule = $this->createRule([
+                'detected_value' => $detectedValue,
+                'replacement_value' => 'Taragüi',
+                'rule_type' => 'brand_normalization',
+                'applies_to_field' => 'marca_homologada',
+                'is_automatic' => false,
+                'requires_review' => true,
+                'confidence_level' => 'contextual',
+            ]);
+            $suggestion = $this->createSuggestion($row, $rule, [
+                'field_name' => 'marca_homologada',
+                'original_value' => $detectedValue,
+                'suggested_value' => 'Taragüi',
+            ]);
+            $originalSnapshot = $row->only(['nombre_sku_original', 'marca_original', 'raw_data']);
+
+            $preview = $this->composer()->compose($row);
+
+            $this->assertSame('Té sin ensobrar 50 sobres', $preview['descripcion_catalogo']);
+            $this->assertSame('Taragüi', $preview['marca_homologada']);
+            $this->assertSame($originalSnapshot, $row->fresh()->only(['nombre_sku_original', 'marca_original', 'raw_data']));
+            $this->assertSame('pending', $suggestion->fresh()->status);
+        }
+    }
+
     public function test_ceboll_is_applied_to_preview_as_a_complete_word_only(): void
     {
         $rule = $this->createRule([
@@ -147,9 +316,9 @@ class ProductStagingPreviewComposerTest extends TestCase
         $tokenPreview = $this->composer()->compose($tokenRow);
         $longerWordPreview = $this->composer()->compose($longerWordRow);
 
-        $this->assertSame('PAPAS SABOR CREMA Y CEBOLLA', $tokenPreview['descripcion_catalogo']);
+        $this->assertSame('Papas sabor crema y cebolla', $tokenPreview['descripcion_catalogo']);
         $this->assertSame([$tokenSuggestion->getKey()], $tokenPreview['applied_suggestion_ids']);
-        $this->assertSame('PRODUCTO CEBOLLETA', $longerWordPreview['descripcion_catalogo']);
+        $this->assertSame('Producto cebolleta', $longerWordPreview['descripcion_catalogo']);
         $this->assertSame([$longerWordSuggestion->getKey()], $longerWordPreview['blocked_suggestion_ids']);
     }
 
@@ -180,7 +349,7 @@ class ProductStagingPreviewComposerTest extends TestCase
         $preview = $this->composer()->compose($row);
         $row->refresh();
 
-        $this->assertSame('Papas fritas CREMA Y CEBOLLA 140GR', $preview['descripcion_catalogo']);
+        $this->assertSame('Papas fritas crema y cebolla 140GR', $preview['descripcion_catalogo']);
         $this->assertSame('TIYUCA', $preview['marca_homologada']);
         $this->assertSame($rowSnapshot, $row->only(['nombre_sku_original', 'marca_original', 'raw_data']));
         $this->assertEquals($suggestionSnapshot, $suggestion->fresh()->getAttributes());
@@ -214,7 +383,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('VINO MALBEC 750CC', $preview['descripcion_catalogo']);
+        $this->assertSame('Vino malbec 750CC', $preview['descripcion_catalogo']);
         $this->assertSame('TRES PLUMAS', $preview['marca_homologada']);
     }
 
@@ -227,7 +396,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('GIRASOL ACEITE 900CC', $preview['descripcion_catalogo']);
+        $this->assertSame('Girasol aceite 900CC', $preview['descripcion_catalogo']);
         $this->assertSame('SOL', $preview['marca_homologada']);
     }
 
@@ -241,7 +410,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
             $preview = $this->composer()->compose($row);
 
-            $this->assertSame('PRODUCTO 0 SIN MARCA', $preview['descripcion_catalogo']);
+            $this->assertSame('Producto 0 sin marca', $preview['descripcion_catalogo']);
         }
     }
 
@@ -265,7 +434,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('CAFÉ 170GR', $preview['descripcion_catalogo']);
+        $this->assertSame('Café 170GR', $preview['descripcion_catalogo']);
         $this->assertSame('ARLISTÁN', $preview['marca_homologada']);
     }
 
@@ -278,7 +447,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('X TIYUCA', $preview['descripcion_catalogo']);
+        $this->assertSame('X tiyuca', $preview['descripcion_catalogo']);
     }
 
     public function test_it_normalizes_preview_whitespace_without_mutating_original_data(): void
@@ -321,9 +490,9 @@ class ProductStagingPreviewComposerTest extends TestCase
         $preview = $this->composer()->compose($row);
         $row->refresh();
 
-        $this->assertSame('ALFAJOR LIMON 50 GRS', $preview['descripcion_catalogo']);
+        $this->assertSame('Alfajor limon 50 grs', $preview['descripcion_catalogo']);
         $this->assertSame('TRES PLUMAS', $preview['marca_homologada']);
-        $this->assertSame('ALFAJOR LIMON 50 GRS', $preview['fields']['descripcion_catalogo']['preview']);
+        $this->assertSame('Alfajor limon 50 grs', $preview['fields']['descripcion_catalogo']['preview']);
         $this->assertSame('TRES PLUMAS', $preview['fields']['marca_homologada']['preview']);
         $this->assertSame($descriptionSource, $preview['source_text']);
         $this->assertSame($brandSource, $preview['source_brand']);
@@ -361,7 +530,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('YERBA CBSE con limón 500GR', $preview['descripcion_catalogo']);
+        $this->assertSame('Yerba cbse con limón 500GR', $preview['descripcion_catalogo']);
         $this->assertSame(
             '  YERBA  CBSE C/LIMON   500 Grs  ',
             $row->fresh()->nombre_sku_original,
@@ -384,7 +553,7 @@ class ProductStagingPreviewComposerTest extends TestCase
         $storedPreview = $row->fresh()->normalized_preview;
 
         $this->assertSame($preview, $storedPreview);
-        $this->assertSame('CARAMELOS LIMÓN', $preview['descripcion_catalogo']);
+        $this->assertSame('Caramelos limón', $preview['descripcion_catalogo']);
         $this->assertSame('CARAMELOS LIMON', $preview['source_text']);
         $this->assertSame('descripcion_catalogo', $preview['field']);
         $this->assertSame([$suggestion->getKey()], $preview['applied_suggestion_ids']);
@@ -396,7 +565,7 @@ class ProductStagingPreviewComposerTest extends TestCase
         $this->assertEquals(
             [
                 'source' => 'CARAMELOS LIMON',
-                'preview' => 'CARAMELOS LIMÓN',
+                'preview' => 'Caramelos limón',
                 'applied_suggestion_ids' => [$suggestion->getKey()],
                 'pending_review_suggestion_ids' => [],
                 'blocked_suggestion_ids' => [],
@@ -535,7 +704,7 @@ class ProductStagingPreviewComposerTest extends TestCase
         $preview = $this->composer()->compose($row);
         $row->refresh();
 
-        $this->assertSame($row->nombre_sku_original, $preview['descripcion_catalogo']);
+        $this->assertSame('Aceituna rell. ajo 200 gr', $preview['descripcion_catalogo']);
         $this->assertSame([], $preview['applied_suggestion_ids']);
         $this->assertSame([$suggestion->getKey()], $preview['manual_review_suggestion_ids']);
         $this->assertSame([], $preview['blocked_suggestion_ids']);
@@ -563,10 +732,10 @@ class ProductStagingPreviewComposerTest extends TestCase
         $preview = $this->composer()->compose($row);
         $row->refresh();
 
-        $this->assertSame($row->nombre_sku_original, $preview['descripcion_catalogo']);
+        $this->assertSame('Vino cab/malbec', $preview['descripcion_catalogo']);
         $this->assertSame([], $preview['applied_suggestion_ids']);
         $this->assertSame([$suggestion->getKey()], $preview['no_change_suggestion_ids']);
-        $this->assertSame('suggested', $row->status);
+        $this->assertSame('previewed', $row->status);
         $this->assertFalse($row->requires_review);
     }
 
@@ -587,7 +756,7 @@ class ProductStagingPreviewComposerTest extends TestCase
         $preview = $this->composer()->compose($row);
         $row->refresh();
 
-        $this->assertSame($row->nombre_sku_original, $preview['descripcion_catalogo']);
+        $this->assertSame('Producto c/ algo', $preview['descripcion_catalogo']);
         $this->assertSame([$suggestion->getKey()], $preview['blocked_suggestion_ids']);
         $this->assertSame([], $preview['applied_suggestion_ids']);
         $this->assertSame('requires_review', $row->status);
@@ -621,7 +790,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('VINO CAB/MALBEC 750CC', $preview['descripcion_catalogo']);
+        $this->assertSame('Vino cab/malbec 750CC', $preview['descripcion_catalogo']);
         $this->assertSame([$measurementSuggestion->getKey()], $preview['applied_suggestion_ids']);
         $this->assertSame([$wineSuggestion->getKey()], $preview['no_change_suggestion_ids']);
         $this->assertSame('previewed', $row->fresh()->status);
@@ -644,12 +813,12 @@ class ProductStagingPreviewComposerTest extends TestCase
         $row->refresh();
 
         $this->assertSame('PRODUCTO SIN CAMBIOS', $preview['source_text']);
-        $this->assertSame('PRODUCTO SIN CAMBIOS', $preview['descripcion_catalogo']);
+        $this->assertSame('Producto sin cambios', $preview['descripcion_catalogo']);
         $this->assertSame([], $preview['applied_suggestion_ids']);
         $this->assertSame([], $preview['blocked_suggestion_ids']);
         $this->assertSame([], $preview['manual_review_suggestion_ids']);
         $this->assertSame([], $preview['no_change_suggestion_ids']);
-        $this->assertSame('analyzed', $row->status);
+        $this->assertSame('previewed', $row->status);
         $this->assertTrue($row->analyzed_at->equalTo($analyzedAt));
     }
 
@@ -734,7 +903,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('ACC', $preview['descripcion_catalogo']);
+        $this->assertSame('Acc', $preview['descripcion_catalogo']);
         $this->assertSame(
             [$higherIdSuggestion->getKey(), $lowerIdSuggestion->getKey()],
             $preview['applied_suggestion_ids'],
@@ -761,7 +930,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('ACC', $preview['descripcion_catalogo']);
+        $this->assertSame('Acc', $preview['descripcion_catalogo']);
         $this->assertSame(
             [$firstSuggestion->getKey(), $secondSuggestion->getKey()],
             $preview['applied_suggestion_ids'],
@@ -792,7 +961,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame($row->nombre_sku_original, $preview['descripcion_catalogo']);
+        $this->assertSame('Producto manual conservar', $preview['descripcion_catalogo']);
         $this->assertSame([$manualSuggestion->getKey()], $preview['manual_review_suggestion_ids']);
         $this->assertSame([$noChangeSuggestion->getKey()], $preview['no_change_suggestion_ids']);
         $this->assertSame([], $preview['applied_suggestion_ids']);
@@ -816,7 +985,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame($row->nombre_sku_original, $preview['descripcion_catalogo']);
+        $this->assertSame('Producto token', $preview['descripcion_catalogo']);
         $this->assertSame([$suggestion->getKey()], $preview['blocked_suggestion_ids']);
         $this->assertSame([], $preview['applied_suggestion_ids']);
     }
@@ -836,7 +1005,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame($row->nombre_sku_original, $preview['descripcion_catalogo']);
+        $this->assertSame('Producto c/ algo', $preview['descripcion_catalogo']);
         $this->assertSame([$suggestion->getKey()], $preview['blocked_suggestion_ids']);
         $this->assertSame('requires_review', $row->fresh()->status);
     }
@@ -862,7 +1031,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('PRODUCTO TOKEN', $preview['descripcion_catalogo']);
+        $this->assertSame('Producto token', $preview['descripcion_catalogo']);
         $this->assertSame(
             [
                 $inactiveRuleSuggestion->getKey(),
@@ -999,7 +1168,7 @@ class ProductStagingPreviewComposerTest extends TestCase
 
         $preview = $this->composer()->compose($row);
 
-        $this->assertSame('CARAMELOS LIMÓN 50 GR', $preview['descripcion_catalogo']);
+        $this->assertSame('Caramelos limón 50 gr', $preview['descripcion_catalogo']);
         $this->assertSame('Manón', $preview['marca_homologada']);
         $this->assertSame(
             [$descriptionSuggestion->getKey()],

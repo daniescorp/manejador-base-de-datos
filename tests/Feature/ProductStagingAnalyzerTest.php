@@ -209,6 +209,36 @@ class ProductStagingAnalyzerTest extends TestCase
         $this->assertSame(0, $this->suggestionQuery($longerWordRow, $rule)->count());
     }
 
+    public function test_envelope_counts_are_suggested_only_in_compatible_contexts(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'CANTIDAD+S',
+            'replacement_value' => 'sobres',
+            'rule_type' => 'contextual_abbreviation',
+            'context' => 'te_infusiones_ensobrados',
+        ]);
+
+        foreach ([25, 50, 100] as $quantity) {
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => "TE NEGRO {$quantity}s",
+            ]);
+
+            $this->analyzer()->analyze($row);
+
+            $suggestion = $this->suggestionFor($row, $rule);
+            $this->assertSame("TE NEGRO {$quantity} sobres", $suggestion->suggested_value);
+            $this->assertSame('pending', $suggestion->status);
+        }
+
+        $outsideContext = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'TORNILLOS 50s ACERO',
+        ]);
+
+        $this->analyzer()->analyze($outsideContext);
+
+        $this->assertSame(0, $this->suggestionQuery($outsideContext, $rule)->count());
+    }
+
     public function test_rell_creates_a_blocked_manual_review_suggestion(): void
     {
         $rule = $this->createRule([
@@ -537,6 +567,32 @@ class ProductStagingAnalyzerTest extends TestCase
 
         $this->assertSame('analyzed', $row->status);
         $this->assertSame(0, $row->suggestions()->count());
+    }
+
+    public function test_taragui_variants_generate_homologated_brand_suggestions(): void
+    {
+        foreach (['TARAGUI', 'TARAGÜI'] as $detectedValue) {
+            $rule = $this->createRule([
+                'detected_value' => $detectedValue,
+                'replacement_value' => 'Taragüi',
+                'rule_type' => 'brand_normalization',
+                'applies_to_field' => 'marca_homologada',
+                'is_automatic' => false,
+                'requires_review' => true,
+                'confidence_level' => 'contextual',
+            ]);
+            $row = ProductStagingRow::factory()->create([
+                'nombre_sku_original' => 'TE NEGRO 50 SOBRES',
+                'marca_original' => $detectedValue,
+            ]);
+
+            $this->analyzer()->analyze($row);
+
+            $suggestion = $this->suggestionFor($row, $rule, 'marca_homologada');
+            $this->assertSame('Taragüi', $suggestion->suggested_value);
+            $this->assertSame('pending', $suggestion->status);
+            $this->assertSame($detectedValue, $row->fresh()->marca_original);
+        }
     }
 
     public function test_it_creates_an_arlistan_brand_suggestion(): void

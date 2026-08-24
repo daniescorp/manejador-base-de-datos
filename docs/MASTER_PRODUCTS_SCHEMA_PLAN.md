@@ -176,6 +176,8 @@ Para InDesign, `descripcion_catalogo` deberá usar medidas compactas como `750CC
 
 El motor de preview normaliza la unidad completa, incluidas variantes plurales y con punto (`Grs`, `KGS`, `CC.`, `LTS`), para evitar reemplazos parciales. La regla contextual `MX` → `MAX` exige un token independiente y revisión; las reglas `ARLISTAN` → `Arlistán` y `MANON` → `Manón` se limitan a `marca_homologada`, permanecen pendientes y no alteran `marca_original` ni `master_products`.
 
+La salida de `descripcion_catalogo` aplica capitalización comercial sin desarmar tokens compactos; en infusiones, `TE` se presenta como `Té`. Las variantes `TARAGUI` y `TARAGÜI` cuentan con sugerencias contextuales hacia `Taragüi`, conservando la marca original y separando la marca homologada de la descripción.
+
 ## Regla inicial para UXB = 0
 
 La base maestra real analizada contiene aproximadamente 8.815 registros y cerca de 1.265 productos con `UXB = 0`. Por decisión funcional, estos productos no serán tomados por ahora como productos activos del sistema, pero tampoco deben eliminarse.

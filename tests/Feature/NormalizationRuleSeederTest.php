@@ -316,6 +316,40 @@ class NormalizationRuleSeederTest extends TestCase
         }
     }
 
+    public function test_taragui_variants_are_seeded_as_distinct_manual_review_brand_rules(): void
+    {
+        foreach (['TARAGUI', 'TARAGÜI'] as $detectedValue) {
+            $rule = NormalizationRule::query()
+                ->whereRaw('BINARY detected_value = ?', [$detectedValue])
+                ->where('rule_type', 'brand_normalization')
+                ->where('applies_to_field', 'marca_homologada')
+                ->firstOrFail();
+
+            $this->assertSame('Taragüi', $rule->replacement_value);
+            $this->assertFalse($rule->is_automatic);
+            $this->assertTrue($rule->requires_preview);
+            $this->assertTrue($rule->requires_review);
+            $this->assertSame('contextual', $rule->confidence_level);
+            $this->assertTrue($rule->active);
+        }
+    }
+
+    public function test_envelope_counts_are_seeded_as_an_automatic_contextual_rule(): void
+    {
+        $rule = $this->rule(
+            'CANTIDAD+S',
+            'contextual_abbreviation',
+            'te_infusiones_ensobrados',
+        );
+
+        $this->assertSame('sobres', $rule->replacement_value);
+        $this->assertTrue($rule->is_automatic);
+        $this->assertTrue($rule->requires_preview);
+        $this->assertFalse($rule->requires_review);
+        $this->assertSame('high', $rule->confidence_level);
+        $this->assertStringContainsString('25s, 50s o 100s', $rule->notes);
+    }
+
     public function test_paper_abbreviations_are_contextual(): void
     {
         foreach (['HS' => 'Hoja Simple', 'DH' => 'Doble Hoja', 'TH' => 'Triple Hoja'] as $detectedValue => $replacementValue) {

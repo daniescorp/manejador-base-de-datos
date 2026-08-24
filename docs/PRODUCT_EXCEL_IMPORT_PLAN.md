@@ -16,6 +16,10 @@ Antes de la revisión o aprobación, el compositor limpia espacios múltiples, t
 
 Como paso final del preview, `descripcion_catalogo` elimina la marca cuando coincide como token o frase completa con `marca_homologada` o `marca_original`. La marca se conserva separada para las salidas de InDesign, Shopify y la app; esta limpieza no altera los datos originales ni implica aprobación.
 
+El preview también interpreta cantidades como `50s` como `50 sobres` exclusivamente cuando el nombre aporta contexto de té, infusión o producto ensobrado. Si la descripción ya expresa `sin ensobrar`, se eliminan los residuos completos `NS`/`NS.` sin modificar `nombre_sku_original` ni `raw_data`.
+
+Como presentación final, `TE` se normaliza a `Té` solo como token contextual y la descripción usa capitalización comercial básica, preservando unidades compactas y `TACC`. `TARAGUI`/`TARAGÜI` se propone como `Taragüi` en `marca_homologada`; el original permanece intacto y la sugerencia no se aprueba automáticamente.
+
 Filament incluye el módulo de solo lectura **Revisión de Productos Importados** para consultar filas de staging, datos originales, previews normalizados y sugerencias asociadas. La UI permite buscar, filtrar y revisar, pero no crea, edita, elimina, aprueba ni aplica registros. `master_products` permanece protegido hasta una etapa posterior de aprobación real; recién entonces podrán generarse `product_change_logs`.
 
 La UI también vincula imágenes PNG por `codigo_producto_original`: busca `{codigo}.png` en la carpeta externa configurada mediante `PRODUCT_IMAGES_BASE_PATH` y muestra una miniatura o el estado correspondiente. Laravel sirve cada imagen al panel mediante una ruta autenticada, sin usar enlaces `file://`, sin guardar binarios o rutas en MySQL y sin copiar imágenes al repositorio. La referencia operativa prevista es `\\10.179.50.14\Dgrafico\BANCO DE IMAGENES CENTRAL`; debe configurarse únicamente en el entorno de ejecución. El comando read-only `app:audit-product-images` permite auditar cobertura por batch y límite.

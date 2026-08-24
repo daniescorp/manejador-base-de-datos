@@ -131,6 +131,9 @@ class ProductStagingPreviewComposer
                 }
             }
 
+            $descriptionPreview = $this->removeResidualNsAfterSinEnsobrar($descriptionPreview);
+            $descriptionPreview = $this->applyBasicCommercialCapitalization($descriptionPreview);
+
             $payload = [
                 self::DESCRIPTION_FIELD => $descriptionPreview,
                 self::BRAND_FIELD => $brandPreview,
@@ -366,6 +369,78 @@ class ProductStagingPreviewComposer
             : $normalizedDescription;
     }
 
+    private function removeResidualNsAfterSinEnsobrar(string $description): string
+    {
+        $normalizedDescription = $this->normalizePreviewWhitespace($description);
+
+        if (preg_match('~(?<![\\p{L}\\p{N}_])sin\\h+ensobrar~iu', $normalizedDescription) !== 1) {
+            return $normalizedDescription;
+        }
+
+        $withoutAttachedResidual = preg_replace(
+            '~(?<=sin ensobrar)\\h*NS\.?(?![\\p{L}\\p{N}_])~iu',
+            ' ',
+            $normalizedDescription,
+        ) ?? $normalizedDescription;
+
+        $withoutResidual = preg_replace(
+            '~(?<![\\p{L}\\p{N}_])NS\.?(?![\\p{L}\\p{N}_])~iu',
+            ' ',
+            $withoutAttachedResidual,
+        ) ?? $withoutAttachedResidual;
+
+        return $this->normalizePreviewWhitespace($withoutResidual);
+    }
+
+    private function applyBasicCommercialCapitalization(string $description): string
+    {
+        $description = $this->normalizePreviewWhitespace($description);
+        $teaContext = $this->hasCompleteTeaTokenInContext($description);
+
+        if (str_contains($description, '_')) {
+            return $description;
+        }
+
+        $capitalized = preg_replace_callback(
+            '~[\p{L}\p{N}]+(?:[./+\-][\p{L}\p{N}]+)*~u',
+            static function (array $matches) use ($teaContext): string {
+                $token = $matches[0];
+
+                if (preg_match('/\p{L}/u', $token) === 1
+                    && preg_match('/\p{N}/u', $token) === 1) {
+                    return $token;
+                }
+
+                if (mb_strtoupper($token, 'UTF-8') === 'TACC') {
+                    return 'TACC';
+                }
+
+                if ($teaContext && mb_strtoupper($token, 'UTF-8') === 'TE') {
+                    return 'té';
+                }
+
+                return mb_strtolower($token, 'UTF-8');
+            },
+            $description,
+        ) ?? $description;
+
+        return preg_replace_callback(
+            '/\p{L}/u',
+            static fn (array $matches): string => mb_strtoupper($matches[0], 'UTF-8'),
+            $capitalized,
+            1,
+        ) ?? $capitalized;
+    }
+
+    private function hasCompleteTeaTokenInContext(string $description): bool
+    {
+        if (preg_match('~(?<![\\p{L}\\p{N}_])TE(?![\\p{L}\\p{N}_])~iu', $description) !== 1) {
+            return false;
+        }
+
+        return preg_match('~^TE(?:\\h|$)|sin\\h+ensobrar|sobres?|saquitos?|infusi(?:o|ó)n|mate\\h+cocido~iu', $description) === 1;
+    }
+
     /**
      * @param  array<string, mixed>|null  $currentPreview
      * @param  array<string, mixed>  $payload
@@ -418,16 +493,16 @@ class ProductStagingPreviewComposer
             return 'requires_review';
         }
 
-        if ($descriptionPreview !== $descriptionSource
-            || $brandPreview !== $brandSource
-            || $brandPendingReviewIds !== []) {
-            return 'previewed';
-        }
-
         if ($descriptionBlockedIds !== []
             || $descriptionManualReviewIds !== []
             || $brandBlockedIds !== []) {
             return 'requires_review';
+        }
+
+        if ($descriptionPreview !== $descriptionSource
+            || $brandPreview !== $brandSource
+            || $brandPendingReviewIds !== []) {
+            return 'previewed';
         }
 
         if ($descriptionAppliedIds !== []

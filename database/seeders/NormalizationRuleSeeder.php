@@ -12,26 +12,37 @@ class NormalizationRuleSeeder extends Seeder
 {
     use WithoutModelEvents;
 
-    public const RULE_COUNT = 105;
+    public const RULE_COUNT = 108;
 
     public function run(): void
     {
         DB::transaction(function (): void {
             foreach ($this->rules() as $rule) {
-                NormalizationRule::query()->updateOrCreate(
-                    Arr::only($rule, [
-                        'detected_value',
-                        'rule_type',
-                        'applies_to_field',
-                        'context',
-                    ]),
-                    Arr::except($rule, [
-                        'detected_value',
-                        'rule_type',
-                        'applies_to_field',
-                        'context',
-                    ]),
-                );
+                $identity = Arr::only($rule, [
+                    'detected_value',
+                    'rule_type',
+                    'applies_to_field',
+                    'context',
+                ]);
+                $existingRule = NormalizationRule::query()
+                    ->whereRaw('BINARY detected_value = ?', [$identity['detected_value']])
+                    ->where('rule_type', $identity['rule_type'])
+                    ->where('applies_to_field', $identity['applies_to_field'])
+                    ->where('context', $identity['context'])
+                    ->first();
+
+                if ($existingRule === null) {
+                    NormalizationRule::query()->create($rule);
+
+                    continue;
+                }
+
+                $existingRule->fill(Arr::except($rule, [
+                    'detected_value',
+                    'rule_type',
+                    'applies_to_field',
+                    'context',
+                ]))->save();
             }
         });
     }
@@ -214,6 +225,18 @@ class NormalizationRuleSeeder extends Seeder
             ),
             ...$this->replacementRules(
                 replacements: [
+                    'TARAGUI' => 'Taragüi',
+                    'TARAGÜI' => 'Taragüi',
+                ],
+                ruleType: 'brand_normalization',
+                isAutomatic: false,
+                requiresReview: true,
+                confidenceLevel: 'contextual',
+                notes: 'Marca con escritura comercial homologada; conservar el valor original y revisar antes de aplicar.',
+                appliesToField: 'marca_homologada',
+            ),
+            ...$this->replacementRules(
+                replacements: [
                     '750 CC' => '750CC',
                     '500 GR' => '500GR',
                     '1 LT' => '1LT',
@@ -226,6 +249,14 @@ class NormalizationRuleSeeder extends Seeder
                 ruleType: 'measurement',
                 context: 'indesign_catalog',
                 notes: 'Formato compacto para evitar cortes de línea en InDesign.',
+            ),
+            ...$this->replacementRules(
+                replacements: [
+                    'CANTIDAD+S' => 'sobres',
+                ],
+                ruleType: 'contextual_abbreviation',
+                context: 'te_infusiones_ensobrados',
+                notes: 'Interpretar cantidades como 25s, 50s o 100s como sobres solo en contexto de té, infusiones o productos ensobrados.',
             ),
             ...$this->replacementRules(
                 replacements: [
