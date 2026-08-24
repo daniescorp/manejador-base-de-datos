@@ -85,6 +85,8 @@ class ProductStagingApprovalServiceTest extends TestCase
         $this->assertSame($row->grupo_original, $masterProduct->grupo_original);
         $this->assertSame($row->familia_original, $masterProduct->familia_original);
         $this->assertSame($row->uxb_original, $masterProduct->uxb_original);
+        $this->assertNull($masterProduct->medida_catalogo);
+        $this->assertTrue($masterProduct->medida_requiere_revision);
         $this->assertSame('aprobado_catalogo', $masterProduct->estado_homologacion);
         $this->assertFalse($masterProduct->requiere_revision);
         $this->assertSame('active', $masterProduct->status);
@@ -110,6 +112,7 @@ class ProductStagingApprovalServiceTest extends TestCase
             'nombre_sin_marca' => 'Papas fritas crema y cebolla 140GR',
             'nombre_homologado' => 'Papas fritas crema y cebolla 140GR',
             'marca_detectada_en_nombre' => '1',
+            'medida_requiere_revision' => '1',
         ];
 
         foreach ($expectedLogs as $field => $newValue) {
@@ -124,6 +127,33 @@ class ProductStagingApprovalServiceTest extends TestCase
                 'change_reason' => "Approved from product staging row ID {$row->getKey()}",
             ]);
         }
+    }
+
+    public function test_it_maps_a_preview_measurement_without_marking_measure_review(): void
+    {
+        $user = User::factory()->create();
+        $row = $this->validRow([
+            'normalized_preview' => [
+                'descripcion_catalogo' => 'Arroz curry 240GR',
+                'marca_homologada' => 'GALLO',
+                'medida_original' => '240GR',
+                'contenido_valor' => '240',
+                'unidad_original' => 'GR',
+                'unidad_normalizada' => 'GR',
+                'medida_valor' => '240',
+                'medida_catalogo' => '240GR',
+            ],
+        ]);
+
+        $masterProduct = $this->service()->approve($row, $user);
+
+        $this->assertSame('240GR', $masterProduct->medida_original);
+        $this->assertSame('240.000', $masterProduct->contenido_valor);
+        $this->assertSame('GR', $masterProduct->unidad_original);
+        $this->assertSame('GR', $masterProduct->unidad_normalizada);
+        $this->assertSame('240.000', $masterProduct->medida_valor);
+        $this->assertSame('240GR', $masterProduct->medida_catalogo);
+        $this->assertFalse($masterProduct->medida_requiere_revision);
     }
 
     public function test_it_updates_the_single_matching_master_and_logs_only_changed_values(): void

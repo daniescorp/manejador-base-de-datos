@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\MasterProduct;
 use App\Models\ProductChangeLog;
+use App\Services\Exports\IndesignTxtExportService;
 use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Artisan;
@@ -65,6 +66,11 @@ class ExportIndesignTxtCommandTest extends TestCase
         $this->createProduct(['codigo_producto' => 'EXPORT-001']);
         $this->createProduct(['codigo_producto' => 'EXPORT-002', 'marca_homologada' => 'ZETA']);
         $this->createProduct(['codigo_producto' => 'EXCLUDED', 'estado_homologacion' => 'pendiente_revision']);
+        $this->createProduct([
+            'codigo_producto' => 'MISSING-MEASURE',
+            'medida_catalogo' => null,
+            'medida_requiere_revision' => false,
+        ]);
         $path = storage_path('app/exports/dry-run-'.Str::uuid().'.txt');
         $masterCount = MasterProduct::query()->count();
         $logCount = ProductChangeLog::query()->count();
@@ -79,7 +85,16 @@ class ExportIndesignTxtCommandTest extends TestCase
         $this->assertSame('dry_run', $result['status']);
         $this->assertSame(1, $result['rows']);
         $this->assertNull($result['file_path']);
-        $this->assertSame(['GALLO;Arroz curry'], $result['preview_lines']);
+        $this->assertSame(IndesignTxtExportService::HEADER, $result['preview_lines'][0]);
+        $this->assertSame('EXPORT-001', explode("\t", $result['preview_lines'][1])[2]);
+        $this->assertSame('indesign_tapa_amba_tab_txt', $result['format']);
+        $this->assertSame('tab', $result['delimiter']);
+        $this->assertSame(15, $result['columns']);
+        $this->assertSame('external_pending', $result['prices_source']);
+        $this->assertSame(1, $result['skipped_missing_measure']);
+        $this->assertSame(['MISSING-MEASURE'], $result['skipped_missing_measure_codes']);
+        $this->assertSame(0, $result['exported_measure_exceptions']);
+        $this->assertSame([], $result['exported_measure_exception_codes']);
         $this->assertFileDoesNotExist($path);
         $this->assertSame($masterCount, MasterProduct::query()->count());
         $this->assertSame($logCount, ProductChangeLog::query()->count());
@@ -106,9 +121,17 @@ class ExportIndesignTxtCommandTest extends TestCase
         $this->assertSame('exported', $result['status']);
         $this->assertSame(1, $result['rows']);
         $this->assertSame($path, $result['file_path']);
-        $this->assertSame(['GALLO;Arroz curry'], $result['preview_lines']);
+        $this->assertSame(IndesignTxtExportService::HEADER, $result['preview_lines'][0]);
         $this->assertFileExists($path);
-        $this->assertSame('GALLO;Arroz curry', File::get($path));
+        $lines = explode("\r\n", File::get($path));
+        $productColumns = explode("\t", $lines[1]);
+
+        $this->assertSame(IndesignTxtExportService::HEADER, $lines[0]);
+        $this->assertCount(15, $productColumns);
+        $this->assertSame('.\\imagenes\\EXPORT-REAL.png', $productColumns[6]);
+        $this->assertSame('', $productColumns[7]);
+        $this->assertSame('', $productColumns[9]);
+        $this->assertSame('', $productColumns[10]);
         $this->assertStringNotContainsString('No exportar', File::get($path));
         $this->assertSame($masterCount, MasterProduct::query()->count());
         $this->assertSame($logCount, ProductChangeLog::query()->count());
@@ -147,6 +170,9 @@ class ExportIndesignTxtCommandTest extends TestCase
             'requiere_revision' => false,
             'marca_homologada' => 'GALLO',
             'descripcion_catalogo' => 'Arroz curry',
+            'uxb_original' => '10',
+            'medida_catalogo' => '100GR',
+            'medida_requiere_revision' => false,
         ], $attributes));
     }
 }

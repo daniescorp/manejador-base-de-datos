@@ -172,7 +172,11 @@ El compositor ya realiza esa separación en `normalized_preview`: quita coincide
 
 La primera etapa de aprobación hacia `master_products` es individual y transaccional. Una fila elegible crea o actualiza el producto por `codigo_producto`, conserva sus campos originales, registra diferencias campo por campo en `product_change_logs` y queda vinculada al producto maestro. `requires_review` y los códigos maestros duplicados bloquean la operación; no hay aprobación masiva.
 
-El recurso Filament **Productos Maestros** permite revisar campos originales, homologados, medidas, UXB, aprobador y fechas, junto con el historial de `product_change_logs` de cada producto. En esta etapa es de solo lectura: no ofrece creación, edición, borrado, restauración ni acciones masivas; los cambios deben ingresar por aprobación de staging u otro flujo controlado.
+El recurso Filament **Productos Maestros** permite revisar campos originales, homologados, medidas, UXB, aprobador y fechas, junto con el historial de `product_change_logs` de cada producto. No ofrece creación, edición general, borrado, restauración ni acciones masivas. La vista de detalle incorpora dos operaciones manuales controladas y auditadas: completar una medida/presentación estable o declarar, con motivo obligatorio, que la medida no aplica.
+
+La medida o presentación sí pertenece al producto maestro cuando es estable (`240GR`, `1KG`, `3LT`, `25 sobres`). Una aprobación sin `medida_catalogo` queda con `medida_requiere_revision = true`; puede completarse manualmente con logs o resolverse mediante la excepción trazable `data.measurement.not_applicable`. Los productos aprobados sin medida y sin excepción permanecen pendientes y no se exportan. El caso real `codigo_producto = 30385` se completa manualmente como `240GR`.
+
+Los precios no pertenecen a `master_products`. Precio de lista, oferta y tachado llegarán desde archivos administrativos de pedido, promoción o lista y se cruzarán por `CODIGO`/SKU al componer cada exportación.
 
 El Diccionario de Normalización permite administrar reglas para `descripcion_catalogo` y `marca_homologada`. El flujo de *staging* ya puede cotejar `marca_original` por igualdad exacta —sin distinguir mayúsculas y minúsculas ni los espacios de los extremos—, generar sugerencias para `marca_homologada` e incorporarlas a la previsualización. `marca_original` no se sobrescribe; casos como `ARLISTAN` → `Arlistán` o `MANON` → `Manón` se validan como marcas homologadas, y su aprobación definitiva hacia `master_products` queda para una etapa posterior.
 

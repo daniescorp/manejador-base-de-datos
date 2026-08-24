@@ -15,16 +15,20 @@ class ExportIndesignTxt extends Command
                             {--dry-run : Generar la vista previa sin crear el archivo}
                             {--output= : Nombre o ruta personalizada del archivo TXT}
                             {--limit= : Cantidad máxima de productos a exportar}
+                            {--include-category-group : Completar categoría y grupo desde el producto maestro}
                             {--json : Imprimir el resultado como JSON}';
 
-    protected $description = 'Exporta productos maestros aprobados a un TXT delimitado para InDesign';
+    protected $description = 'Exporta productos maestros aprobados al formato TXT tabulado TAPA AMBA';
 
     public function handle(IndesignTxtExportService $exportService): int
     {
         try {
             $limit = $this->positiveIntegerOption('limit');
             $dryRun = (bool) $this->option('dry-run');
-            $export = $exportService->generate($limit);
+            $export = $exportService->generate(
+                $limit,
+                (bool) $this->option('include-category-group'),
+            );
             $filePath = null;
 
             if (! $dryRun) {
@@ -41,6 +45,14 @@ class ExportIndesignTxt extends Command
                 'rows' => $export['rows'],
                 'file_path' => $filePath,
                 'preview_lines' => array_slice($export['lines'], 0, 10),
+                'format' => IndesignTxtExportService::FORMAT,
+                'delimiter' => 'tab',
+                'columns' => IndesignTxtExportService::COLUMNS,
+                'prices_source' => IndesignTxtExportService::PRICES_SOURCE,
+                'skipped_missing_measure' => $export['skipped_missing_measure'],
+                'skipped_missing_measure_codes' => $export['skipped_missing_measure_codes'],
+                'exported_measure_exceptions' => $export['exported_measure_exceptions'],
+                'exported_measure_exception_codes' => $export['exported_measure_exception_codes'],
             ];
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
@@ -57,6 +69,8 @@ class ExportIndesignTxt extends Command
             $this->table(['Dato', 'Resultado'], [
                 ['Estado', $result['status']],
                 ['Filas', $result['rows']],
+                ['Omitidos sin medida', $result['skipped_missing_measure']],
+                ['Exportados por excepción', $result['exported_measure_exceptions']],
                 ['Archivo', $result['file_path'] ?? 'No creado (dry-run)'],
             ]);
 

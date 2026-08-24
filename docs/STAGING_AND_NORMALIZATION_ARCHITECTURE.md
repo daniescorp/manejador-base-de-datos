@@ -487,7 +487,11 @@ Previsualización:
 
 ## Relación con salidas
 
-La exportación inicial para InDesign parte únicamente de `master_products` con estado activo, homologación `aprobado_catalogo`, sin revisión pendiente y con marca y descripción completas. El comando `app:export-indesign-txt` genera archivos en `storage/app/exports` con formato `MARCA;Descripción catálogo`; no crea `ExportJob` ni modifica datos. Futuras versiones podrán incorporar plantillas, orden por categoría, precios, imágenes y campos adicionales.
+La exportación para InDesign parte únicamente de `master_products` con estado activo, homologación `aprobado_catalogo`, sin revisión pendiente y con marca y descripción completas. El comando `app:export-indesign-txt` genera en `storage/app/exports` el formato tabulado TAPA AMBA de 15 columnas, con ruta de imagen `.\imagenes\{CODIGO}.png`; no crea `ExportJob` ni modifica datos. El anterior formato simple `MARCA;Descripción catálogo` queda descartado.
+
+`master_products` **no guarda precios**. Los campos `PRECIOLISTA`, `PRECIOOFERTA` y `PRECIOTACHADO` de TAPA AMBA salen vacíos en esta etapa. En el flujo futuro, el usuario aportará un archivo administrativo de pedido, promoción o lista; el sistema leerá códigos SKU y precios, cruzará `CODIGO`/SKU contra productos maestros aprobados, combinará marca/descripción/UXB/imagen del maestro con precios de esa fuente y reportará códigos faltantes antes de exportar. Los casos `VARIOS`, combos, orden de salida y variantes AMBA/Interior quedan para iteraciones posteriores.
+
+La medida/presentación estable sí pertenece a `master_products`. Una aprobación sin `medida_catalogo` marca `medida_requiere_revision`; la vista de detalle permite completarla manualmente o registrar en `data.measurement` una excepción no aplicable con motivo, usuario, fecha y logs. La exportación omite los productos aprobados sin medida ni excepción y devuelve `skipped_missing_measure` con sus códigos; las excepciones válidas se exportan y se informan mediante `exported_measure_exceptions`. El caso controlado `30385` queda documentado con presentación `240GR`.
 
 La evolución v2 de `master_products` deberá alimentar:
 

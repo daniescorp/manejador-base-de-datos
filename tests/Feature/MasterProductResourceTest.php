@@ -136,6 +136,90 @@ class MasterProductResourceTest extends TestCase
             ->assertSee('master-resource-json-marker');
     }
 
+    public function test_detail_measurement_action_calls_the_controlled_service(): void
+    {
+        $product = $this->masterProduct([
+            'medida_original' => null,
+            'contenido_valor' => null,
+            'unidad_original' => null,
+            'unidad_normalizada' => null,
+            'medida_valor' => null,
+            'medida_catalogo' => null,
+            'medida_requiere_revision' => true,
+            'descripcion_catalogo' => 'Arroz curry',
+            'nombre_sin_marca' => 'Arroz curry',
+            'nombre_homologado' => 'Arroz curry',
+            'name' => 'Arroz curry',
+        ]);
+
+        Livewire::test(ViewMasterProduct::class, ['record' => $product->getRouteKey()])
+            ->assertActionExists('completeMeasurement')
+            ->assertActionVisible('completeMeasurement')
+            ->assertActionExists('markMeasurementNotApplicable')
+            ->assertActionVisible('markMeasurementNotApplicable')
+            ->callAction('completeMeasurement', [
+                'value' => 240,
+                'unit' => 'GR',
+                'reason' => 'Carga manual desde Productos Maestros',
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertSame('240GR', $product->fresh()->medida_catalogo);
+        $this->assertSame('Arroz curry 240GR', $product->fresh()->descripcion_catalogo);
+        $this->assertDatabaseHas('product_change_logs', [
+            'master_product_id' => $product->getKey(),
+            'field_name' => 'medida_catalogo',
+            'source' => 'manual',
+        ]);
+    }
+
+    public function test_measurement_exception_action_requires_reason_and_records_the_exception(): void
+    {
+        $product = $this->masterProduct([
+            'medida_original' => null,
+            'contenido_valor' => null,
+            'unidad_original' => null,
+            'unidad_normalizada' => null,
+            'medida_valor' => null,
+            'medida_catalogo' => null,
+            'medida_requiere_revision' => true,
+        ]);
+
+        Livewire::test(ViewMasterProduct::class, ['record' => $product->getRouteKey()])
+            ->callAction('markMeasurementNotApplicable', ['reason' => ''])
+            ->assertHasActionErrors(['reason' => 'required']);
+
+        Livewire::test(ViewMasterProduct::class, ['record' => $product->getRouteKey()])
+            ->callAction('markMeasurementNotApplicable', [
+                'reason' => 'La medida no aplica al servicio',
+            ])
+            ->assertHasNoActionErrors();
+
+        $updated = $product->fresh();
+        $this->assertNull($updated->medida_catalogo);
+        $this->assertFalse($updated->medida_requiere_revision);
+        $this->assertTrue(data_get($updated->data, 'measurement.not_applicable'));
+        $this->assertSame(
+            'La medida no aplica al servicio',
+            data_get($updated->data, 'measurement.not_applicable_reason'),
+        );
+    }
+
+    public function test_measurement_actions_are_hidden_for_ineligible_master_products(): void
+    {
+        foreach ([
+            ['status' => 'inactive'],
+            ['estado_homologacion' => 'pendiente_revision'],
+            ['requiere_revision' => true],
+        ] as $attributes) {
+            $product = $this->masterProduct($attributes);
+
+            Livewire::test(ViewMasterProduct::class, ['record' => $product->getRouteKey()])
+                ->assertActionHidden('completeMeasurement')
+                ->assertActionHidden('markMeasurementNotApplicable');
+        }
+    }
+
     public function test_change_history_displays_associated_logs_and_is_read_only(): void
     {
         $product = $this->masterProduct();

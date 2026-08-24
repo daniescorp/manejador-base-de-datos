@@ -50,9 +50,10 @@ class IndesignTxtExportServiceTest extends TestCase
     public function test_it_exports_only_approved_active_complete_products_without_database_writes(): void
     {
         $this->createProduct([
-            'codigo_producto' => 'EXPORT-100',
+            'codigo_producto' => '30385',
             'marca_homologada' => 'GALLO',
             'descripcion_catalogo' => 'Arroz curry',
+            'uxb_original' => '10',
         ]);
         $this->createProduct(['codigo_producto' => 'EXCLUDED-NOT-APPROVED', 'estado_homologacion' => null]);
         $this->createProduct(['codigo_producto' => 'EXCLUDED-OTHER-STATE', 'estado_homologacion' => 'pendiente_revision']);
@@ -60,14 +61,44 @@ class IndesignTxtExportServiceTest extends TestCase
         $this->createProduct(['codigo_producto' => 'EXCLUDED-REVIEW', 'requiere_revision' => true]);
         $this->createProduct(['codigo_producto' => 'EXCLUDED-NO-BRAND', 'marca_homologada' => '  ']);
         $this->createProduct(['codigo_producto' => 'EXCLUDED-NO-DESCRIPTION', 'descripcion_catalogo' => null]);
+        $this->createProduct([
+            'codigo_producto' => 'EXCLUDED-NO-MEASURE',
+            'medida_catalogo' => null,
+            'medida_requiere_revision' => false,
+        ]);
         $masterCount = MasterProduct::query()->count();
         $logCount = ProductChangeLog::query()->count();
 
         $export = $this->service()->generate();
+        $headerColumns = explode("\t", $export['lines'][0]);
+        $productColumns = explode("\t", $export['lines'][1]);
+        $expectedHeader = "CATEGORIA\tGRUPO\tCODIGO\tMARCA\tDESCRIPCION\tUXB\t@folder\tPRECIOLISTA\t@folder\t PRECIOOFERTA \t PRECIOTACHADO \t@folder\t@folder\tConca\tConca";
 
         $this->assertSame(1, $export['rows']);
-        $this->assertSame(['GALLO;Arroz curry'], $export['lines']);
-        $this->assertSame('GALLO;Arroz curry', $export['content']);
+        $this->assertSame($expectedHeader, IndesignTxtExportService::HEADER);
+        $this->assertSame($expectedHeader, $export['lines'][0]);
+        $this->assertCount(15, $headerColumns);
+        $this->assertCount(15, $productColumns);
+        $this->assertSame('', $productColumns[0]);
+        $this->assertSame('', $productColumns[1]);
+        $this->assertSame('30385', $productColumns[2]);
+        $this->assertSame('GALLO', $productColumns[3]);
+        $this->assertSame('Arroz curry', $productColumns[4]);
+        $this->assertSame('10', $productColumns[5]);
+        $this->assertSame('.\\imagenes\\30385.png', $productColumns[6]);
+        $this->assertSame('', $productColumns[7]);
+        $this->assertSame('', $productColumns[9]);
+        $this->assertSame('', $productColumns[10]);
+        $this->assertStringNotContainsString(';', $export['content']);
+        $this->assertSame(
+            $expectedHeader."\r\n".$export['lines'][1],
+            $export['content'],
+        );
+        $this->assertFalse(str_starts_with($export['content'], "\xEF\xBB\xBF"));
+        $this->assertSame(1, $export['skipped_missing_measure']);
+        $this->assertSame(['EXCLUDED-NO-MEASURE'], $export['skipped_missing_measure_codes']);
+        $this->assertSame(0, $export['exported_measure_exceptions']);
+        $this->assertSame([], $export['exported_measure_exception_codes']);
         $this->assertSame($masterCount, MasterProduct::query()->count());
         $this->assertSame($logCount, ProductChangeLog::query()->count());
     }
@@ -84,7 +115,51 @@ class IndesignTxtExportServiceTest extends TestCase
 
         $this->assertSame(['001', '003', '004', '002'], $products->pluck('codigo_producto')->all());
         $this->assertSame(2, $limitedExport['rows']);
-        $this->assertSame(['ALFA;Arroz', 'ALFA;Arroz'], $limitedExport['lines']);
+        $this->assertCount(3, $limitedExport['lines']);
+        $this->assertSame('001', explode("\t", $limitedExport['lines'][1])[2]);
+        $this->assertSame('003', explode("\t", $limitedExport['lines'][2])[2]);
+    }
+
+    public function test_it_can_optionally_include_category_and_group_without_price_fields(): void
+    {
+        $product = $this->createProduct([
+            'codigo_producto' => 'WITH-CATEGORY',
+            'categoria_original' => 'Alimentos',
+            'grupo_original' => 'Arroz',
+        ]);
+
+        $export = $this->service()->generate(includeCategoryGroup: true);
+        $columns = explode("\t", $export['lines'][1]);
+
+        $this->assertSame('Alimentos', $columns[0]);
+        $this->assertSame('Arroz', $columns[1]);
+        $this->assertSame([], array_intersect(
+            ['precio_lista', 'precio_oferta', 'precio_tachado'],
+            array_keys($product->fresh()->getAttributes()),
+        ));
+    }
+
+    public function test_it_exports_a_manual_measurement_exception_and_reports_its_code(): void
+    {
+        $this->createProduct([
+            'codigo_producto' => 'NO-MEASURE-APPLIES',
+            'medida_catalogo' => null,
+            'medida_requiere_revision' => false,
+            'data' => [
+                'measurement' => [
+                    'not_applicable' => true,
+                    'not_applicable_reason' => 'Producto sin presentación física',
+                ],
+            ],
+        ]);
+
+        $export = $this->service()->generate();
+
+        $this->assertSame(1, $export['rows']);
+        $this->assertSame(1, $export['exported_measure_exceptions']);
+        $this->assertSame(['NO-MEASURE-APPLIES'], $export['exported_measure_exception_codes']);
+        $this->assertSame(0, $export['skipped_missing_measure']);
+        $this->assertSame('NO-MEASURE-APPLIES', explode("\t", $export['lines'][1])[2]);
     }
 
     private function service(): IndesignTxtExportService
@@ -107,6 +182,8 @@ class IndesignTxtExportServiceTest extends TestCase
             'requiere_revision' => false,
             'marca_homologada' => 'MARCA EXPORT',
             'descripcion_catalogo' => 'Producto exportable',
+            'medida_catalogo' => '100GR',
+            'medida_requiere_revision' => false,
         ], $attributes));
     }
 }

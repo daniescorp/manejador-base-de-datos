@@ -114,6 +114,22 @@ class ProductStagingApprovalService
         $originalBrand = $this->nullableString($row->marca_original);
         $homologatedBrand = $this->previewValue($row, 'marca_homologada')
             ?: $originalBrand;
+        $catalogMeasure = $this->previewValue($row, 'medida_catalogo');
+        $measurementAttributes = [
+            'medida_requiere_revision' => $catalogMeasure === null,
+        ];
+
+        if ($catalogMeasure !== null) {
+            $measurementAttributes = [
+                'medida_original' => $this->previewValue($row, 'medida_original') ?: $catalogMeasure,
+                'contenido_valor' => $this->previewValue($row, 'contenido_valor'),
+                'unidad_original' => $this->previewValue($row, 'unidad_original'),
+                'unidad_normalizada' => $this->previewValue($row, 'unidad_normalizada'),
+                'medida_valor' => $this->previewValue($row, 'medida_valor'),
+                'medida_catalogo' => $catalogMeasure,
+                'medida_requiere_revision' => false,
+            ];
+        }
         $approvedAt = now();
 
         return [
@@ -136,6 +152,7 @@ class ProductStagingApprovalService
             'grupo_original' => $this->nullableString($row->grupo_original),
             'familia_original' => $this->nullableString($row->familia_original),
             'uxb_original' => $this->nullableString($row->uxb_original),
+            ...$measurementAttributes,
             'estado_homologacion' => 'aprobado_catalogo',
             'requiere_revision' => false,
             'approved_by_id' => $user->getKey(),
