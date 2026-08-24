@@ -26,12 +26,54 @@ use Illuminate\Database\Eloquent\Model;
 
 class ProductStagingRowResource extends Resource
 {
+    private const DIRECT_SEARCH_COLUMNS = [
+        'codigo_producto_original',
+        'nombre_sku_original',
+        'marca_original',
+        'categoria_original',
+        'grupo_original',
+        'familia_original',
+        'ean_original',
+        'uxb_original',
+        'review_reason',
+    ];
+
+    private const PREVIEW_SEARCH_COLUMNS = [
+        'normalized_preview->descripcion_catalogo',
+        'normalized_preview->marca_homologada',
+        'normalized_preview->source_text',
+        'normalized_preview->source_brand',
+        'normalized_preview->fields->descripcion_catalogo->value',
+        'normalized_preview->fields->marca_homologada->value',
+        'normalized_preview->fields->descripcion_catalogo->preview',
+        'normalized_preview->fields->marca_homologada->preview',
+    ];
+
+    private const SUGGESTION_SEARCH_COLUMNS = [
+        'field_name',
+        'original_value',
+        'suggested_value',
+        'suggestion_reason',
+        'confidence_level',
+        'status',
+    ];
+
+    private const RULE_SEARCH_COLUMNS = [
+        'rule_name',
+        'detected_value',
+        'replacement_value',
+        'rule_type',
+        'context',
+        'notes',
+    ];
+
     public const STATUS_OPTIONS = [
         'pending' => 'Pendiente',
         'analyzed' => 'Analizado',
         'suggested' => 'Con sugerencias',
         'previewed' => 'Previsualizado',
         'requires_review' => 'Requiere revisión',
+        'approved' => 'Aprobado',
     ];
 
     protected static ?string $model = ProductStagingRow::class;
@@ -179,6 +221,7 @@ class ProductStagingRowResource extends Resource
                     ->label('Estado')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
+                        'approved' => 'success',
                         'previewed' => 'success',
                         'requires_review' => 'danger',
                         'suggested' => 'warning',
@@ -215,6 +258,10 @@ class ProductStagingRowResource extends Resource
                     ->counts('suggestions')
                     ->sortable(),
             ])
+            ->searchUsing(fn (Builder $query, string $search): Builder => self::applyTableSearch(
+                $query,
+                $search,
+            ))
             ->filters([
                 SelectFilter::make('import_batch_id')->label('Lote')->relationship('batch', 'name'),
                 SelectFilter::make('status')->label('Estado')->options(self::STATUS_OPTIONS),
@@ -338,6 +385,35 @@ class ProductStagingRowResource extends Resource
             ?? data_get($preview, "fields.{$field}.preview");
 
         return is_scalar($value) ? (string) $value : null;
+    }
+
+    private static function applyTableSearch(Builder $query, string $search): Builder
+    {
+        $pattern = "%{$search}%";
+
+        return $query->where(function (Builder $searchQuery) use ($pattern): void {
+            foreach (self::DIRECT_SEARCH_COLUMNS as $index => $column) {
+                $searchQuery->{$index === 0 ? 'where' : 'orWhere'}($column, 'like', $pattern);
+            }
+
+            foreach (self::PREVIEW_SEARCH_COLUMNS as $column) {
+                $searchQuery->orWhere($column, 'like', $pattern);
+            }
+
+            $searchQuery->orWhereHas('suggestions', function (Builder $suggestions) use ($pattern): void {
+                $suggestions->where(function (Builder $suggestionSearch) use ($pattern): void {
+                    foreach (self::SUGGESTION_SEARCH_COLUMNS as $index => $column) {
+                        $suggestionSearch->{$index === 0 ? 'where' : 'orWhere'}($column, 'like', $pattern);
+                    }
+
+                    $suggestionSearch->orWhereHas('rule', function (Builder $rules) use ($pattern): void {
+                        foreach (self::RULE_SEARCH_COLUMNS as $index => $column) {
+                            $rules->{$index === 0 ? 'where' : 'orWhere'}($column, 'like', $pattern);
+                        }
+                    });
+                });
+            });
+        });
     }
 
     private static function readableJson(?array $value): string

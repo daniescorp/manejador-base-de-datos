@@ -170,6 +170,10 @@ El esquema deberá separar `marca_original`, `marca_homologada`, `nombre_origina
 
 El compositor ya realiza esa separación en `normalized_preview`: quita coincidencias completas de la marca en `descripcion_catalogo`, conserva `marca_original` intacta y mantiene `marca_homologada` como campo independiente. No remueve coincidencias parciales ni aplica cambios a `master_products` antes de una aprobación futura.
 
+La primera etapa de aprobación hacia `master_products` es individual y transaccional. Una fila elegible crea o actualiza el producto por `codigo_producto`, conserva sus campos originales, registra diferencias campo por campo en `product_change_logs` y queda vinculada al producto maestro. `requires_review` y los códigos maestros duplicados bloquean la operación; no hay aprobación masiva.
+
+El recurso Filament **Productos Maestros** permite revisar campos originales, homologados, medidas, UXB, aprobador y fechas, junto con el historial de `product_change_logs` de cada producto. En esta etapa es de solo lectura: no ofrece creación, edición, borrado, restauración ni acciones masivas; los cambios deben ingresar por aprobación de staging u otro flujo controlado.
+
 El Diccionario de Normalización permite administrar reglas para `descripcion_catalogo` y `marca_homologada`. El flujo de *staging* ya puede cotejar `marca_original` por igualdad exacta —sin distinguir mayúsculas y minúsculas ni los espacios de los extremos—, generar sugerencias para `marca_homologada` e incorporarlas a la previsualización. `marca_original` no se sobrescribe; casos como `ARLISTAN` → `Arlistán` o `MANON` → `Manón` se validan como marcas homologadas, y su aprobación definitiva hacia `master_products` queda para una etapa posterior.
 
 Para InDesign, `descripcion_catalogo` deberá usar medidas compactas como `750CC`, `500GR`, `1LT`, `1KG` y `4x30MT`. Los valores estructurados de contenido, unidad, cantidad y medida deberán conservarse por separado aunque la salida visual sea compacta.

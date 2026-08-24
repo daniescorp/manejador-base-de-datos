@@ -94,7 +94,11 @@ El panel Filament permite crear, consultar, editar, activar y desactivar reglas 
 
 ### Servicio inicial de composición de previsualización
 
-El sistema cuenta con un servicio que combina las sugerencias aplicables en `product_staging_rows.normalized_preview` sin aprobarlas ni modificar productos maestros. La previsualización mantiene la estructura existente de `descripcion_catalogo` e incorpora `source_brand`, `marca_homologada` y los identificadores de sugerencias de marca separados entre aplicados, pendientes de revisión y bloqueados. La aprobación definitiva y el traslado a `master_products` quedan para una etapa posterior.
+El sistema cuenta con un servicio que combina las sugerencias aplicables en `product_staging_rows.normalized_preview` sin aprobarlas ni modificar productos maestros. La previsualización mantiene la estructura existente de `descripcion_catalogo` e incorpora `source_brand`, `marca_homologada` y los identificadores de sugerencias de marca separados entre aplicados, pendientes de revisión y bloqueados.
+
+La aprobación definitiva inicial se ejecuta producto por producto desde el detalle de staging. Usa una transacción para crear o actualizar `master_products`, escribir `product_change_logs` y marcar la fila como aprobada; un fallo revierte las tres operaciones. Las filas con `requires_review`, sin código o sin descripción normalizada quedan bloqueadas, y las sugerencias permanecen pendientes.
+
+Los productos aprobados se consultan en **Productos Maestros**, cuya vista de detalle organiza identificación, descripciones, marca, clasificación, medidas, UXB, control y data JSON. El historial asociado muestra valores anteriores y nuevos, origen, motivo, usuario, regla y lote; tanto el producto como sus logs son read-only en esta etapa.
 
 Ejemplo:
 

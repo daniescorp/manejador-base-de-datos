@@ -20,7 +20,13 @@ El preview también interpreta cantidades como `50s` como `50 sobres` exclusivam
 
 Como presentación final, `TE` se normaliza a `Té` solo como token contextual y la descripción usa capitalización comercial básica, preservando unidades compactas y `TACC`. `TARAGUI`/`TARAGÜI` se propone como `Taragüi` en `marca_homologada`; el original permanece intacto y la sugerencia no se aprueba automáticamente.
 
-Filament incluye el módulo de solo lectura **Revisión de Productos Importados** para consultar filas de staging, datos originales, previews normalizados y sugerencias asociadas. La UI permite buscar, filtrar y revisar, pero no crea, edita, elimina, aprueba ni aplica registros. `master_products` permanece protegido hasta una etapa posterior de aprobación real; recién entonces podrán generarse `product_change_logs`.
+Filament incluye el módulo **Revisión de Productos Importados** para consultar filas de staging, datos originales, previews normalizados y sugerencias asociadas. La UI no permite crear, editar ni eliminar registros, pero la vista de detalle ofrece una aprobación individual controlada cuando la fila tiene código y preview válidos y no requiere revisión. No existe aprobación masiva.
+
+La búsqueda textual del listado consulta datos originales, preview normalizado, motivos de revisión y valores de las sugerencias y reglas asociadas, manteniendo toda la resolución en la consulta SQL.
+
+La aprobación individual crea o actualiza `master_products` por `codigo_producto`, registra cada campo nuevo o modificado en `product_change_logs` y marca la fila de staging como aprobada. Los datos originales y las sugerencias pendientes no se sobrescriben ni se aprueban automáticamente; si hay más de un producto maestro con el mismo código, la operación se bloquea.
+
+La UI **Productos Maestros** permite revisar el resultado aprobado y navegar su historial de cambios. La edición directa y las acciones destructivas permanecen bloqueadas para que las modificaciones provengan de staging o de futuros flujos expresamente controlados.
 
 La UI también vincula imágenes PNG por `codigo_producto_original`: busca `{codigo}.png` en la carpeta externa configurada mediante `PRODUCT_IMAGES_BASE_PATH` y muestra una miniatura o el estado correspondiente. Laravel sirve cada imagen al panel mediante una ruta autenticada, sin usar enlaces `file://`, sin guardar binarios o rutas en MySQL y sin copiar imágenes al repositorio. La referencia operativa prevista es `\\10.179.50.14\Dgrafico\BANCO DE IMAGENES CENTRAL`; debe configurarse únicamente en el entorno de ejecución. El comando read-only `app:audit-product-images` permite auditar cobertura por batch y límite.
 
