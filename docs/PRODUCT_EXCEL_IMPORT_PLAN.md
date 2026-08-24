@@ -28,6 +28,8 @@ La aprobación individual crea o actualiza `master_products` por `codigo_product
 
 La UI **Productos Maestros** permite revisar el resultado aprobado y navegar su historial de cambios. La edición directa y las acciones destructivas permanecen bloqueadas para que las modificaciones provengan de staging o de futuros flujos expresamente controlados.
 
+La primera salida para InDesign se genera con `php artisan app:export-indesign-txt`. Consulta exclusivamente productos maestros activos, aprobados y sin revisión pendiente, y produce una línea `MARCA;Descripción catálogo` por producto. `--dry-run --json` permite revisar las filas sin crear archivos; la exportación real se guarda en `storage/app/exports` y no se incorpora al repositorio.
+
 La UI también vincula imágenes PNG por `codigo_producto_original`: busca `{codigo}.png` en la carpeta externa configurada mediante `PRODUCT_IMAGES_BASE_PATH` y muestra una miniatura o el estado correspondiente. Laravel sirve cada imagen al panel mediante una ruta autenticada, sin usar enlaces `file://`, sin guardar binarios o rutas en MySQL y sin copiar imágenes al repositorio. La referencia operativa prevista es `\\10.179.50.14\Dgrafico\BANCO DE IMAGENES CENTRAL`; debe configurarse únicamente en el entorno de ejecución. El comando read-only `app:audit-product-images` permite auditar cobertura por batch y límite.
 
 Las miniaturas son únicamente representaciones visuales de la imagen original: no se generan archivos thumbnail físicos. El listado limita la representación a `80x64px` y el detalle a `260x260px` mediante estilos inline, con `object-fit: contain`; el enlace autenticado permite abrir la imagen completa en otra pestaña.

@@ -487,6 +487,8 @@ Previsualización:
 
 ## Relación con salidas
 
+La exportación inicial para InDesign parte únicamente de `master_products` con estado activo, homologación `aprobado_catalogo`, sin revisión pendiente y con marca y descripción completas. El comando `app:export-indesign-txt` genera archivos en `storage/app/exports` con formato `MARCA;Descripción catálogo`; no crea `ExportJob` ni modifica datos. Futuras versiones podrán incorporar plantillas, orden por categoría, precios, imágenes y campos adicionales.
+
 La evolución v2 de `master_products` deberá alimentar:
 
 - InDesign;
