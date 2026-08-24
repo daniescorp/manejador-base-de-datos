@@ -111,8 +111,9 @@ class ProductStagingApprovalService
     {
         $code = trim((string) $row->codigo_producto_original);
         $description = $this->previewValue($row, 'descripcion_catalogo');
+        $originalBrand = $this->nullableString($row->marca_original);
         $homologatedBrand = $this->previewValue($row, 'marca_homologada')
-            ?: $this->nullableString($row->marca_original);
+            ?: $originalBrand;
         $approvedAt = now();
 
         return [
@@ -121,9 +122,16 @@ class ProductStagingApprovalService
             'sku_original' => $code,
             'ean_original' => $this->nullableString($row->ean_original),
             'nombre_original' => $this->nullableString($row->nombre_sku_original),
+            'nombre_sin_marca' => $description,
+            'nombre_homologado' => $description,
             'descripcion_catalogo' => $description,
-            'marca_original' => $this->nullableString($row->marca_original),
+            'marca_original' => $originalBrand,
             'marca_homologada' => $homologatedBrand,
+            'marca_detectada_en_nombre' => $this->brandAppearsInName(
+                $this->nullableString($row->nombre_sku_original),
+                $originalBrand,
+                $homologatedBrand,
+            ),
             'categoria_original' => $this->nullableString($row->categoria_original),
             'grupo_original' => $this->nullableString($row->grupo_original),
             'familia_original' => $this->nullableString($row->familia_original),
@@ -190,6 +198,39 @@ class ProductStagingApprovalService
         $value = trim((string) $value);
 
         return $value === '' ? null : $value;
+    }
+
+    private function brandAppearsInName(?string $name, ?string ...$brands): bool
+    {
+        if ($name === null) {
+            return false;
+        }
+
+        $normalizedName = preg_replace('/\s+/u', ' ', $name);
+
+        if ($normalizedName === null) {
+            return false;
+        }
+
+        foreach ($brands as $brand) {
+            if ($brand === null) {
+                continue;
+            }
+
+            $normalizedBrand = preg_replace('/\s+/u', ' ', $brand);
+
+            if ($normalizedBrand === null) {
+                continue;
+            }
+
+            $pattern = '/(?<![\p{L}\p{N}])'.preg_quote($normalizedBrand, '/').'(?![\p{L}\p{N}])/iu';
+
+            if (preg_match($pattern, $normalizedName) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function logValue(mixed $value): ?string

@@ -72,11 +72,14 @@ class ProductStagingApprovalServiceTest extends TestCase
         $this->assertSame($row->ean_original, $masterProduct->ean_original);
         $this->assertSame($row->ean_original, $masterProduct->barcode);
         $this->assertSame($row->nombre_sku_original, $masterProduct->nombre_original);
+        $this->assertSame('Papas fritas crema y cebolla 140GR', $masterProduct->nombre_sin_marca);
+        $this->assertSame('Papas fritas crema y cebolla 140GR', $masterProduct->nombre_homologado);
         $this->assertSame('Papas fritas crema y cebolla 140GR', $masterProduct->descripcion_catalogo);
         $this->assertSame('Papas fritas crema y cebolla 140GR', $masterProduct->name);
         $this->assertSame($row->marca_original, $masterProduct->marca_original);
         $this->assertSame('Taragüi', $masterProduct->marca_homologada);
         $this->assertSame('Taragüi', $masterProduct->brand);
+        $this->assertTrue($masterProduct->marca_detectada_en_nombre);
         $this->assertSame($row->categoria_original, $masterProduct->categoria_original);
         $this->assertSame($row->categoria_original, $masterProduct->category);
         $this->assertSame($row->grupo_original, $masterProduct->grupo_original);
@@ -85,7 +88,7 @@ class ProductStagingApprovalServiceTest extends TestCase
         $this->assertSame('aprobado_catalogo', $masterProduct->estado_homologacion);
         $this->assertFalse($masterProduct->requiere_revision);
         $this->assertSame('active', $masterProduct->status);
-        $this->assertSame($row->raw_data, $masterProduct->data);
+        $this->assertEquals($row->raw_data, $masterProduct->data);
         $this->assertSame($user->getKey(), $masterProduct->approved_by_id);
         $this->assertSame($batch->getKey(), $masterProduct->last_import_batch_id);
         $this->assertNotNull($masterProduct->approved_at);
@@ -99,7 +102,17 @@ class ProductStagingApprovalServiceTest extends TestCase
         $this->assertSame('pending', $suggestion->fresh()->status);
         $this->assertSame($otherSnapshot, $otherRow->fresh()->getAttributes());
 
-        foreach (['codigo_producto', 'descripcion_catalogo', 'marca_homologada', 'nombre_original'] as $field) {
+        $expectedLogs = [
+            'codigo_producto' => $row->codigo_producto_original,
+            'descripcion_catalogo' => 'Papas fritas crema y cebolla 140GR',
+            'marca_homologada' => 'Taragüi',
+            'nombre_original' => $row->nombre_sku_original,
+            'nombre_sin_marca' => 'Papas fritas crema y cebolla 140GR',
+            'nombre_homologado' => 'Papas fritas crema y cebolla 140GR',
+            'marca_detectada_en_nombre' => '1',
+        ];
+
+        foreach ($expectedLogs as $field => $newValue) {
             $this->assertDatabaseHas('product_change_logs', [
                 'master_product_id' => $masterProduct->getKey(),
                 'changed_by_id' => $user->getKey(),
@@ -107,6 +120,7 @@ class ProductStagingApprovalServiceTest extends TestCase
                 'source' => 'batch_approval',
                 'field_name' => $field,
                 'old_value' => null,
+                'new_value' => $newValue,
                 'change_reason' => "Approved from product staging row ID {$row->getKey()}",
             ]);
         }
@@ -121,8 +135,11 @@ class ProductStagingApprovalServiceTest extends TestCase
             'sku' => $row->codigo_producto_original,
             'descripcion_catalogo' => 'Descripción anterior',
             'name' => 'Descripción anterior',
+            'nombre_sin_marca' => 'Nombre anterior sin marca',
+            'nombre_homologado' => 'Nombre anterior homologado',
             'marca_original' => $row->marca_original,
             'marca_homologada' => 'Taragüi',
+            'marca_detectada_en_nombre' => false,
             'brand' => 'Taragüi',
         ]);
 
@@ -130,6 +147,9 @@ class ProductStagingApprovalServiceTest extends TestCase
 
         $this->assertSame($masterProduct->getKey(), $approved->getKey());
         $this->assertSame('Papas fritas crema y cebolla 140GR', $approved->descripcion_catalogo);
+        $this->assertSame('Papas fritas crema y cebolla 140GR', $approved->nombre_sin_marca);
+        $this->assertSame('Papas fritas crema y cebolla 140GR', $approved->nombre_homologado);
+        $this->assertTrue($approved->marca_detectada_en_nombre);
         $this->assertDatabaseHas('product_change_logs', [
             'master_product_id' => $masterProduct->getKey(),
             'field_name' => 'descripcion_catalogo',
@@ -144,6 +164,64 @@ class ProductStagingApprovalServiceTest extends TestCase
             'master_product_id' => $masterProduct->getKey(),
             'field_name' => 'marca_homologada',
         ]);
+
+        foreach ([
+            'nombre_sin_marca' => ['Nombre anterior sin marca', 'Papas fritas crema y cebolla 140GR'],
+            'nombre_homologado' => ['Nombre anterior homologado', 'Papas fritas crema y cebolla 140GR'],
+            'marca_detectada_en_nombre' => ['0', '1'],
+        ] as $field => [$oldValue, $newValue]) {
+            $this->assertDatabaseHas('product_change_logs', [
+                'master_product_id' => $masterProduct->getKey(),
+                'field_name' => $field,
+                'old_value' => $oldValue,
+                'new_value' => $newValue,
+            ]);
+        }
+    }
+
+    public function test_it_detects_a_compound_homologated_brand_as_a_complete_phrase(): void
+    {
+        $user = User::factory()->create();
+        $row = $this->validRow([
+            'nombre_sku_original' => 'ARROZ dos hermanos INTEGRAL',
+            'marca_original' => 'OTRA MARCA',
+            'normalized_preview' => [
+                'descripcion_catalogo' => 'Arroz integral',
+                'marca_homologada' => 'DOS HERMANOS',
+            ],
+        ]);
+
+        $masterProduct = $this->service()->approve($row, $user);
+
+        $this->assertTrue($masterProduct->marca_detectada_en_nombre);
+        $this->assertSame('OTRA MARCA', $masterProduct->marca_original);
+        $this->assertEquals($row->raw_data, $masterProduct->data);
+    }
+
+    public function test_it_does_not_detect_an_absent_or_partial_brand_match(): void
+    {
+        $user = User::factory()->create();
+        $cases = [
+            ['ARROZ INTEGRAL PREMIUM', 'GALLO'],
+            ['ACEITE DE GIRASOL 900ML', 'SOL'],
+        ];
+
+        foreach ($cases as [$name, $brand]) {
+            $row = $this->validRow([
+                'nombre_sku_original' => $name,
+                'marca_original' => $brand,
+                'normalized_preview' => [
+                    'descripcion_catalogo' => 'Producto normalizado',
+                    'marca_homologada' => $brand,
+                ],
+            ]);
+
+            $masterProduct = $this->service()->approve($row, $user);
+
+            $this->assertFalse($masterProduct->marca_detectada_en_nombre);
+            $this->assertSame($brand, $masterProduct->marca_original);
+            $this->assertEquals($row->raw_data, $masterProduct->data);
+        }
     }
 
     public function test_it_blocks_invalid_already_approved_and_review_required_rows_without_partial_writes(): void
@@ -255,7 +333,7 @@ class ProductStagingApprovalServiceTest extends TestCase
             'categoria_original' => 'Almacén',
             'grupo_original' => 'Snacks',
             'familia_original' => 'Papas fritas',
-            'marca_original' => 'TARAGUI',
+            'marca_original' => 'taragui',
             'raw_data' => ['source' => 'approval-test', 'token' => $token],
             'normalized_preview' => [
                 'descripcion_catalogo' => 'Papas fritas crema y cebolla 140GR',
