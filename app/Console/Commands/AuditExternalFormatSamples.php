@@ -74,6 +74,7 @@ class AuditExternalFormatSamples extends Command
             ['TXT catálogo', $report['totals']['catalog_txt_files']],
             ['TXT promociones', $report['totals']['promotions_txt_files']],
             ['Filas irregulares', $report['totals']['irregular_rows']],
+            ['Secciones duplicadas de catálogo', count($report['catalog']['duplicate_sections'])],
         ]);
 
         if ($report['missing_files'] !== []) {
@@ -105,6 +106,10 @@ class AuditExternalFormatSamples extends Command
                     ->values()
                     ->all(),
             );
+        }
+
+        foreach ($report['catalog']['duplicate_sections'] as $duplicateSection) {
+            $this->warn($duplicateSection['message']);
         }
 
         if (isset($report['output_path'])) {

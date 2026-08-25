@@ -135,6 +135,11 @@ class ExternalFormatSamplesAuditService
                 'input' => $catalogInput,
                 'outputs' => $catalogOutputs,
                 'output_count' => count($catalogOutputs),
+                'duplicate_sections' => $catalogInput['duplicate_catalog_sections'] ?? [],
+                'automatic_export_blocked_sections' => array_values(array_map(
+                    static fn (array $issue): string => $issue['normalized_section'],
+                    $catalogInput['duplicate_catalog_sections'] ?? [],
+                )),
                 'category_correspondence' => $this->categoryCorrespondence($catalogInput, array_keys($catalogOutputs)),
                 'same_output_structure' => $this->sameTextStructure($catalogOutputs),
             ],
@@ -175,6 +180,10 @@ class ExternalFormatSamplesAuditService
                     'grouped_varios_allowed' => false,
                     'composite_code_allowed_as_product' => false,
                     'automatic_export_requires_product' => true,
+                    'duplicate_catalog_section_requires_review' => true,
+                    'duplicate_catalog_section_blocks_only_affected_section' => true,
+                    'duplicate_catalog_section_automatic_selection' => false,
+                    'duplicate_catalog_section_merge_blocks' => false,
                 ],
                 self::WORKFLOW_PROMO_TAPA => [
                     'grouped_varios_allowed' => true,
@@ -356,6 +365,7 @@ class ExternalFormatSamplesAuditService
         }
 
         $spreadsheet->disconnectWorksheets();
+        $catalogSectionAudit = $this->catalogSectionAudit(basename($filePath), $sheets, $workflowType);
         $firstTables = array_values(array_filter(array_column($sheets, 'first_table')));
         $secondaryBlocks = [];
 
@@ -380,6 +390,9 @@ class ExternalFormatSamplesAuditService
                 ...array_column($sheets, 'name'),
                 ...$this->nestedValues($sheets, 'categories_detected'),
             ]))),
+            'catalog_sections' => $catalogSectionAudit['sections'],
+            'duplicate_catalog_sections' => $catalogSectionAudit['duplicates'],
+            'has_duplicate_catalog_sections' => $catalogSectionAudit['duplicates'] !== [],
             'line_types' => $this->sumLineTypes($firstTables),
             'classification_counts' => $this->sumClassificationCounts($firstTables),
             'price_columns' => array_values(array_unique($this->nestedValues($firstTables, 'price_columns'))),
@@ -547,6 +560,11 @@ class ExternalFormatSamplesAuditService
             'useful_rows' => count($rows),
             'line_types' => $lineTypes,
             'classification_counts' => $classificationCounts,
+            'has_code_column' => $codeIndex !== null,
+            'has_category_column' => $categoryIndex !== null,
+            'all_rows_exportable_automatically' => $rows !== [] && collect($rows)->every(
+                static fn (array $row): bool => $row['exportable_automatically'],
+            ),
             'price_columns' => $this->matchingHeaderNames($headers, ['precio', 'lista', 'oferta', 'tachado']),
             'image_container_columns' => $this->matchingHeaderNames($headers, ['imagen', 'folder', 'contenedor', 'cucarda']),
             'categories_detected' => array_values(array_unique($categories)),
@@ -633,6 +651,148 @@ class ExternalFormatSamplesAuditService
         $text = $this->normalizeHeader(implode(' ', array_filter($values)));
 
         return preg_match('/\b(?:nota|notas|total|totales|observacion|informativo)\b/u', $text) === 1;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $sheets
+     * @return array{sections: array<int, array<string, mixed>>, duplicates: array<int, array<string, mixed>>}
+     */
+    private function catalogSectionAudit(string $fileName, array $sheets, string $workflowType): array
+    {
+        if ($workflowType !== self::WORKFLOW_CATALOG_BODY) {
+            return ['sections' => [], 'duplicates' => []];
+        }
+
+        $sections = [];
+
+        foreach ($sheets as $sheet) {
+            $blocks = array_values(array_filter([
+                $sheet['first_table'] ?? null,
+                ...($sheet['secondary_blocks'] ?? []),
+            ]));
+
+            foreach ($blocks as $block) {
+                if (! ($block['has_code_column'] ?? false)) {
+                    continue;
+                }
+
+                $labels = array_values(array_unique(array_filter(array_map(
+                    static fn (mixed $category): string => trim((string) $category),
+                    $block['categories_detected'] ?? [],
+                ))));
+
+                if ($labels === [] && ! $this->isGenericSheetName((string) $sheet['name'])) {
+                    $labels[] = (string) $sheet['name'];
+                }
+
+                foreach ($labels as $label) {
+                    $normalizedSection = $this->normalizeCatalogSection($label);
+
+                    if ($normalizedSection === '') {
+                        continue;
+                    }
+
+                    $sections[] = [
+                        'workflow_type' => self::WORKFLOW_CATALOG_BODY,
+                        'section' => $label,
+                        'normalized_section' => $normalizedSection,
+                        'rows' => (int) ($block['useful_rows'] ?? 0),
+                        'file' => $fileName,
+                        'sheet' => (string) $sheet['name'],
+                        'range' => (string) ($block['range'] ?? ''),
+                        'origin' => $fileName.'#'.$sheet['name'].':'.($block['range'] ?? ''),
+                        'requires_review' => false,
+                        'severity' => null,
+                        'problem' => null,
+                        'exportable_automatically' => (bool) ($block['all_rows_exportable_automatically'] ?? false),
+                    ];
+                }
+            }
+        }
+
+        $grouped = collect($sections)->groupBy('normalized_section');
+        $duplicateKeys = $grouped
+            ->filter(static fn ($origins): bool => $origins->count() > 1)
+            ->keys()
+            ->all();
+
+        $sections = array_map(static function (array $section) use ($duplicateKeys): array {
+            if (! in_array($section['normalized_section'], $duplicateKeys, true)) {
+                return $section;
+            }
+
+            return [
+                ...$section,
+                'requires_review' => true,
+                'severity' => 'blocked',
+                'problem' => 'duplicate_catalog_section',
+                'exportable_automatically' => false,
+            ];
+        }, $sections);
+
+        $duplicates = collect($sections)
+            ->groupBy('normalized_section')
+            ->filter(static fn ($origins): bool => $origins->count() > 1)
+            ->map(function ($origins, string $normalizedSection): array {
+                $origins = $origins->values()->all();
+
+                return [
+                    'problem' => 'duplicate_catalog_section',
+                    'workflow_type' => self::WORKFLOW_CATALOG_BODY,
+                    'normalized_section' => $normalizedSection,
+                    'detected_blocks' => count($origins),
+                    'rows_per_block' => array_values(array_map(
+                        static fn (array $origin): int => $origin['rows'],
+                        $origins,
+                    )),
+                    'origins' => array_values(array_map(
+                        static fn (array $origin): array => [
+                            'file' => $origin['file'],
+                            'sheet' => $origin['sheet'],
+                            'range' => $origin['range'],
+                            'section' => $origin['section'],
+                            'rows' => $origin['rows'],
+                            'origin' => $origin['origin'],
+                        ],
+                        $origins,
+                    )),
+                    'status' => 'requires_review',
+                    'requires_review' => true,
+                    'severity' => 'blocked',
+                    'exportable_automatically' => false,
+                    'automatic_selection' => false,
+                    'merge_blocks' => false,
+                    'recommendation' => 'manual_selection',
+                    'message' => 'Se detectaron '.count($origins).' bloques para '.$origins[0]['section'].'. Elegí cuál usar.',
+                ];
+            })
+            ->values()
+            ->all();
+
+        return ['sections' => $sections, 'duplicates' => $duplicates];
+    }
+
+    private function normalizeCatalogSection(string $section): string
+    {
+        $normalized = $this->normalizeHeader($section);
+        $normalized = preg_replace('/\.(?:xlsx?|txt)$/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/[^a-z0-9]+/u', ' ', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+(?:int|interior)$/u', '', trim($normalized)) ?? trim($normalized);
+        $normalized = preg_replace('/\s+/u', ' ', trim($normalized)) ?? trim($normalized);
+
+        return match ($normalized) {
+            'almacen', 'alimentos' => 'almacen',
+            'bebidas con al', 'bebidas c alcohol', 'bebidas con alcohol' => 'bebidas_con_al',
+            'bebidas sin al', 'bebidas s alcohol', 'bebidas sin alcohol' => 'bebidas_sin_al',
+            'gastro', 'gastronomia' => 'gastro',
+            'non food', 'nonfood' => 'non_food',
+            default => str_replace(' ', '_', $normalized),
+        };
+    }
+
+    private function isGenericSheetName(string $sheetName): bool
+    {
+        return preg_match('/^hoja\s*\d*(?:\s*\(\s*\d+\s*\))?$/u', $this->normalizeHeader($sheetName)) === 1;
     }
 
     /** @return array{character: string, printable: string, label: string, candidates: array<string, mixed>} */

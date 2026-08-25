@@ -25,3 +25,17 @@ Los centavos reales nunca se redondean silenciosamente. Por ejemplo, `1699,50` d
 - En `catalog_body`, cada línea exportable debe ser `product`; `VARIOS` y códigos compuestos requieren revisión y no se exportan automáticamente.
 - En `promo_tapa`, `promo_diaria` y ofertas varias, `VARIOS` puede ser una agrupación comercial válida si la plantilla lo permite. No se busca como producto maestro.
 - El formateo de precio es idéntico en todos los workflows; la validez de la línea continúa dependiendo de las reglas de su workflow.
+
+## Secciones duplicadas en el cuerpo de catálogo
+
+En `catalog_body`, cada categoría debe apuntar a una única sección de salida. Si dos hojas, solapas o bloques terminan en la misma clave normalizada de exportación, el auditor informa `duplicate_catalog_section`. Son equivalentes, por ejemplo, `Importados`, `IMPORTADOS INT` e `Importados Interior`; también se contemplan alias conocidos como `Alimentos`/`ALMACÉN INT` y `Bebidas C/Alcohol`/`BEBIDAS CON AL INT`.
+
+Un duplicado es un error estructural del archivo recibido, distinto de un SKU repetido, `VARIOS`, un código compuesto o una promoción agrupada. La detección registra el archivo, hoja, rango y cantidad de filas de cada origen, y aplica estas decisiones exclusivamente a la sección afectada:
+
+- estado `requires_review` y severidad `blocked`;
+- no elegir automáticamente un bloque;
+- no mezclar sus filas;
+- no exportar automáticamente esa categoría;
+- permitir que las demás secciones válidas continúen procesándose.
+
+El caso real que motivó la regla fue una duplicación humana de Importados en el libro de cuerpo general. La futura UI deberá presentar un mensaje como “Se detectaron 2 bloques para Importados. Elegí cuál usar.” y mantener bloqueada esa salida hasta que una persona seleccione el origen válido. Esta regla no se aplica como bloqueo de catálogo a `promo_tapa`.

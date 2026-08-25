@@ -36,6 +36,23 @@ Para cada TXT se detectan encoding probable, delimitador, encabezado exacto, col
 
 El cuerpo general admite únicamente líneas `product` con un SKU real. `VARIOS` y los códigos compuestos se detectan estructuralmente para poder contarlos, pero reciben `workflow_status = invalid_for_catalog_body`, `requires_review = true` y `exportable_automatically = false`. No pueden convertirse en una línea válida del cuerpo ni continuar automáticamente al exportador.
 
+### Duplicados de sección
+
+El auditor normaliza los nombres de las secciones de `catalog_body` a claves de salida estables. Entre otras equivalencias iniciales, reconoce `Alimentos`/`ALMACÉN INT`, `Bebidas C/Alcohol`/`BEBIDAS CON AL INT`, `Bebidas S/Alcohol`/`BEBIDAS SIN AL INT`, `Importados`/`IMPORTADOS INT`, Gastronomía/GASTRO, Limpieza, Perfumería y Non Food.
+
+Si dos bloques, hojas o solapas resuelven a la misma clave, el reporte agrega `duplicate_catalog_section` con:
+
+- `workflow_type = catalog_body` y la sección normalizada;
+- cantidad de bloques y filas por bloque;
+- archivo, hoja, rango, etiqueta original y origen de cada bloque;
+- `status = requires_review` y `severity = blocked`;
+- `exportable_automatically = false`;
+- recomendación `manual_selection`.
+
+La regla no elige un bloque ni combina filas. Bloquea solamente la exportación automática de la sección duplicada; las demás secciones conservan su propio estado. Tampoco se activa para `promo_tapa`. El duplicado humano de los dos bloques de Importados en la muestra real es el caso de referencia y no debe considerarse una estructura normal.
+
+La futura UI permitirá elegir explícitamente el bloque válido y mostrará: “Se detectaron 2 bloques para Importados. Elegí cuál usar.” Hasta esa resolución, la sección permanecerá bloqueada.
+
 ## Flujo de ofertas, tapas y promociones
 
 La entrada es `Libro3.xlsx` y su `workflow_type` es `promo_tapa`. El primer bloque con encabezados comerciales se considera el cuadro útil; los bloques posteriores se reportan separadamente como cuadros secundarios o información manual. Esto permite excluir notas, totales y columnas auxiliares antes de diseñar una automatización.

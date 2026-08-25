@@ -207,6 +207,118 @@ class ExternalFormatSamplesAuditTest extends TestCase
         $this->assertSame(1, $report['workflow_totals']['promo_tapa']['grouped_varios']);
     }
 
+    public function test_a_single_catalog_section_does_not_require_duplicate_review(): void
+    {
+        $report = $this->service()->auditWorkbook(
+            $this->catalogWorkbook(['Importados']),
+            workflowType: ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY,
+        );
+
+        $this->assertFalse($report['has_duplicate_catalog_sections']);
+        $this->assertSame([], $report['duplicate_catalog_sections']);
+        $this->assertCount(1, $report['catalog_sections']);
+        $this->assertSame('importados', $report['catalog_sections'][0]['normalized_section']);
+        $this->assertFalse($report['catalog_sections'][0]['requires_review']);
+        $this->assertTrue($report['catalog_sections'][0]['exportable_automatically']);
+    }
+
+    public function test_duplicate_catalog_sections_are_blocked_without_blocking_other_sections(): void
+    {
+        $report = $this->service()->auditWorkbook(
+            $this->catalogWorkbook(['Importados', 'IMPORTADOS', 'Limpieza']),
+            workflowType: ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY,
+        );
+        $issue = $report['duplicate_catalog_sections'][0];
+        $importados = array_values(array_filter(
+            $report['catalog_sections'],
+            static fn (array $section): bool => $section['normalized_section'] === 'importados',
+        ));
+        $limpieza = array_values(array_filter(
+            $report['catalog_sections'],
+            static fn (array $section): bool => $section['normalized_section'] === 'limpieza',
+        ))[0];
+
+        $this->assertTrue($report['has_duplicate_catalog_sections']);
+        $this->assertSame('duplicate_catalog_section', $issue['problem']);
+        $this->assertSame('catalog_body', $issue['workflow_type']);
+        $this->assertSame('importados', $issue['normalized_section']);
+        $this->assertSame(2, $issue['detected_blocks']);
+        $this->assertSame([1, 1], $issue['rows_per_block']);
+        $this->assertCount(2, $issue['origins']);
+        $this->assertSame('requires_review', $issue['status']);
+        $this->assertTrue($issue['requires_review']);
+        $this->assertSame('blocked', $issue['severity']);
+        $this->assertFalse($issue['exportable_automatically']);
+        $this->assertFalse($issue['automatic_selection']);
+        $this->assertFalse($issue['merge_blocks']);
+        $this->assertSame('manual_selection', $issue['recommendation']);
+        $this->assertSame('Se detectaron 2 bloques para Importados. Elegí cuál usar.', $issue['message']);
+        $this->assertCount(2, $importados);
+        $this->assertTrue(collect($importados)->every(
+            static fn (array $section): bool => $section['requires_review']
+                && $section['problem'] === 'duplicate_catalog_section'
+                && $section['exportable_automatically'] === false,
+        ));
+        $this->assertFalse($limpieza['requires_review']);
+        $this->assertTrue($limpieza['exportable_automatically']);
+    }
+
+    public function test_catalog_section_aliases_resolve_to_the_same_export_key(): void
+    {
+        $report = $this->service()->auditWorkbook(
+            $this->catalogWorkbook([
+                'Importados',
+                'IMPORTADOS INT',
+                'Bebidas C/Alcohol',
+                'BEBIDAS CON AL INT',
+                'Alimentos',
+                'ALMACÉN INT',
+            ]),
+            workflowType: ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY,
+        );
+        $duplicates = collect($report['duplicate_catalog_sections'])->keyBy('normalized_section');
+
+        $this->assertSame(
+            ['almacen', 'bebidas_con_al', 'importados'],
+            $duplicates->keys()->sort()->values()->all(),
+        );
+        $this->assertSame(2, $duplicates['importados']['detected_blocks']);
+        $this->assertSame(2, $duplicates['bebidas_con_al']['detected_blocks']);
+        $this->assertSame(2, $duplicates['almacen']['detected_blocks']);
+    }
+
+    public function test_promo_tapa_does_not_apply_catalog_duplicate_blocking(): void
+    {
+        $report = $this->service()->auditWorkbook(
+            $this->catalogWorkbook(['Importados', 'IMPORTADOS INT']),
+            workflowType: ExternalFormatSamplesAuditService::WORKFLOW_PROMO_TAPA,
+        );
+
+        $this->assertFalse($report['has_duplicate_catalog_sections']);
+        $this->assertSame([], $report['catalog_sections']);
+        $this->assertSame([], $report['duplicate_catalog_sections']);
+    }
+
+    public function test_duplicate_section_audit_does_not_query_or_modify_product_tables(): void
+    {
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $this->service()->auditWorkbook(
+            $this->catalogWorkbook(['Importados', 'IMPORTADOS INT']),
+            workflowType: ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY,
+        );
+
+        $this->assertSame([], $queries);
+        $source = file_get_contents((new \ReflectionClass(ExternalFormatSamplesAuditService::class))->getFileName());
+        $this->assertIsString($source);
+        $this->assertStringNotContainsString('master_products', $source);
+        $this->assertStringNotContainsString('product_change_logs', $source);
+        $this->assertStringNotContainsString('Facades\\DB', $source);
+    }
+
     public function test_the_command_writes_json_only_when_output_is_explicit(): void
     {
         $directory = $this->directory();
@@ -281,6 +393,33 @@ class ExternalFormatSamplesAuditTest extends TestCase
 
         if ($path === false) {
             throw new RuntimeException('No fue posible crear el XLSX sintético.');
+        }
+
+        (new Xlsx($spreadsheet))->save($path);
+        $spreadsheet->disconnectWorksheets();
+        $this->temporaryPaths[] = $path;
+
+        return $path;
+    }
+
+    /** @param array<int, string> $sections */
+    private function catalogWorkbook(array $sections): string
+    {
+        $spreadsheet = new Spreadsheet;
+
+        foreach ($sections as $index => $section) {
+            $sheet = $index === 0 ? $spreadsheet->getActiveSheet() : $spreadsheet->createSheet();
+            $sheet->setTitle('Origen '.($index + 1));
+            $sheet->fromArray([
+                ['CATEGORIA', 'CODIGO', 'MARCA', 'DESCRIPCION'],
+                [$section, (string) (30000 + $index), 'MARCA', 'Producto sintético'],
+            ]);
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'external-format-catalog-xlsx-');
+
+        if ($path === false) {
+            throw new RuntimeException('No fue posible crear el XLSX sintético de catálogo.');
         }
 
         (new Xlsx($spreadsheet))->save($path);
