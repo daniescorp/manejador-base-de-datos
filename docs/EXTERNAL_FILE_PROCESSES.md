@@ -22,6 +22,16 @@ Los centavos reales nunca se redondean silenciosamente. Por ejemplo, `1699,50` d
 
 Mientras no exista un importador que entregue ese mapa externo, el comando conserva `prices_source = external_pending` y genera las tres columnas vacías. Cuando se proporcionan precios al servicio, informa `prices_source = external_provided`; los precios nunca se leen ni persisten en `master_products`.
 
+### Construcción del mapa externo de precios
+
+`ExternalPriceMapBuilder` recibe filas ya parseadas y construye un mapa estable por `CODIGO`, compatible con `IndesignTxtExportService`. Reconoce `CODIGO`/`Código`/`codigo` y `SKU` en distintas capitalizaciones, además de `PRECIOLISTA`, `PRECIOOFERTA`, `PRECIOTACHADO` y sus variantes con espacios o guion bajo. Las columnas comerciales auxiliares se ignoran.
+
+El builder usa `ExternalPriceFormatter` para los tres precios y devuelve `price_map`, warnings estructurados y contadores de valores formateados, vacíos, códigos inválidos, duplicados, revisiones y bloqueos. No lee archivos directamente, no consulta la base y no persiste el resultado. Un precio con centavos reales queda vacío en el mapa y genera `price_requires_review`.
+
+Sólo los códigos numéricos simples ingresan al mapa normal. `VARIOS`, los compuestos completos y los incompletos se reportan respectivamente como `grouped_varios_not_mapped`, `composite_code_not_mapped` e `incomplete_composite_code`. Un código ausente o inválido tampoco se agrega.
+
+Si un código se repite con los mismos precios ya normalizados, se conserva una sola entrada. Si sus precios difieren, se mantiene el primer registro para preservar el orden y se emite `duplicate_price_code` con severidad `blocked`; nunca se elige automáticamente entre ambos. La futura UI deberá mostrar todos los warnings y exigir la resolución de revisiones/bloqueos antes de exportar.
+
 ## Relación con workflows y líneas especiales
 
 - En `catalog_body`, cada línea exportable debe ser `product`; `VARIOS`, `composite_code` e `incomplete_composite_code` requieren revisión, reciben `invalid_for_catalog_body` y no se exportan automáticamente.

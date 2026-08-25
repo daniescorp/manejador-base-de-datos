@@ -92,6 +92,14 @@ Una celda de código vacía se reporta como `empty`. Cualquier valor que no cump
 
 El exportador futuro cruzará por `CODIGO`/SKU únicamente las líneas `product`. Los códigos compuestos se resolverán como agrupaciones. `VARIOS` sólo podrá exportarse con los valores comerciales del archivo externo en workflows promocionales que lo permitan, sin crear ni exigir un producto maestro artificial; queda bloqueado en `catalog_body`.
 
+## Fuente externa de precios por código
+
+Las filas que el diagnóstico o un futuro lector XLSX/TXT produzcan pueden entregarse a `ExternalPriceMapBuilder`. Este servicio puro normaliza alias de `CODIGO`/`SKU` y de los tres campos de precio, aplica `ExternalPriceFormatter` y genera la estructura que consume `IndesignTxtExportService`. `master_products` sigue sin almacenar precios.
+
+El resultado incluye `price_map`, `warnings`, `requires_review`, `blocked_count`, `review_count`, `formatted_count`, `empty_price_count`, `duplicate_code_count` e `invalid_code_count`. Cada warning identifica, cuando corresponde, código, número de fila, campo, valor original, issue, severidad y recomendación.
+
+`VARIOS`, `composite_code` e `incomplete_composite_code` no ingresan al mapa automático de productos. Los centavos reales tampoco producen un valor exportable. Para duplicados, precios normalizados idénticos se deduplican; precios diferentes conservan el primer registro y generan `duplicate_price_code` bloqueado. Una UI futura deberá presentar estos diagnósticos antes de habilitar la exportación.
+
 El informe mantiene conteos separados por `workflow_type` para `product`, `composite_code`, `incomplete_composite_code`, `grouped_varios`, `invalid_for_catalog_body` y `requires_review`. Los tipos de línea describen qué se detectó; los estados expresan la decisión contextual, por lo que un código compuesto de cuerpo puede incrementar tanto su tipo como `invalid_for_catalog_body` y `requires_review`.
 
 ## Muestras locales
