@@ -32,6 +32,16 @@ Sólo los códigos numéricos simples ingresan al mapa normal. `VARIOS`, los com
 
 Si un código se repite con los mismos precios ya normalizados, se conserva una sola entrada. Si sus precios difieren, se mantiene el primer registro para preservar el orden y se emite `duplicate_price_code` con severidad `blocked`; nunca se elige automáticamente entre ambos. La futura UI deberá mostrar todos los warnings y exigir la resolución de revisiones/bloqueos antes de exportar.
 
+## Lector externo read-only
+
+`ExternalRowsReader` convierte archivos TXT tabulados y XLSX en filas asociativas sin persistir datos ni modificar el archivo recibido. Cada fila conserva número, archivo, hoja, `workflow_type` y un bloque `data`; `rowsForPriceMap()` entrega directamente esos datos a `ExternalPriceMapBuilder`.
+
+Para TXT detecta TAB, convierte Windows-1252 a UTF-8 y conserva las 15 columnas. Los encabezados comerciales relevantes se normalizan a `CODIGO`, `PRECIOLISTA`, `PRECIOOFERTA` y `PRECIOTACHADO`. Encabezados auxiliares repetidos reciben sufijos estables, por ejemplo `@folder_2`, `@IMAGENES_3` o `Conca_2`, sin perder columnas.
+
+Para XLSX utiliza PhpSpreadsheet y la detección de bloques del auditor. Sólo lee la tabla principal de cada hoja: en `Libro3.xlsx` el bloque secundario informativo queda fuera de las filas automáticas. En `catalog_body`, las secciones duplicadas se devuelven como warnings bloqueados; el lector no elige ni mezcla los bloques de Importados.
+
+El flujo futuro es: recibir archivo, leer filas, clasificar códigos/secciones, construir `price_map`, diagnosticar warnings, previsualizar y exportar solamente cuando no existan bloqueos.
+
 ## Relación con workflows y líneas especiales
 
 - En `catalog_body`, cada línea exportable debe ser `product`; `VARIOS`, `composite_code` e `incomplete_composite_code` requieren revisión, reciben `invalid_for_catalog_body` y no se exportan automáticamente.

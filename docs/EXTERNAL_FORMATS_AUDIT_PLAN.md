@@ -100,6 +100,17 @@ El resultado incluye `price_map`, `warnings`, `requires_review`, `blocked_count`
 
 `VARIOS`, `composite_code` e `incomplete_composite_code` no ingresan al mapa automático de productos. Los centavos reales tampoco producen un valor exportable. Para duplicados, precios normalizados idénticos se deduplican; precios diferentes conservan el primer registro y generan `duplicate_price_code` bloqueado. Una UI futura deberá presentar estos diagnósticos antes de habilitar la exportación.
 
+## Lectura read-only de filas externas
+
+`ExternalRowsReader` es la entrada común para TXT y XLSX. No usa modelos ni DB, no escribe reportes y no mueve ni modifica las muestras. Devuelve filas con trazabilidad de archivo, hoja y número original, además de metadata de formato, workflow, encoding, delimitador, columnas, filas y bloques ignorados.
+
+- TXT: detecta el delimitador TAB, soporta Windows-1252 y normaliza encabezados repetidos mediante sufijos seguros sin perder las 15 posiciones.
+- XLSX: usa PhpSpreadsheet y lee los primeros cuadros útiles identificados por el auditor.
+- `promo_tapa`: `Libro3.xlsx` entrega sólo su tabla principal; los bloques informativos secundarios se cuentan pero no ingresan al resultado automático.
+- `catalog_body`: las secciones duplicadas, incluido el caso humano de Importados, se reportan con sus orígenes y permanecen sin resolver.
+
+Las filas `data` pueden pasarse sin adaptadores adicionales a `ExternalPriceMapBuilder`. La cadena prevista es lectura, clasificación, mapa de precios, diagnóstico, vista previa y exportación condicionada a la ausencia de bloqueos.
+
 El informe mantiene conteos separados por `workflow_type` para `product`, `composite_code`, `incomplete_composite_code`, `grouped_varios`, `invalid_for_catalog_body` y `requires_review`. Los tipos de línea describen qué se detectó; los estados expresan la decisión contextual, por lo que un código compuesto de cuerpo puede incrementar tanto su tipo como `invalid_for_catalog_body` y `requires_review`.
 
 ## Muestras locales
