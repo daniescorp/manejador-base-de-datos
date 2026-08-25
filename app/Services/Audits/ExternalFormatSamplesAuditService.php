@@ -176,9 +176,11 @@ class ExternalFormatSamplesAuditService
                 'external_file_controls_prices' => true,
                 'product_requires_master_lookup' => true,
                 'composite_code_requires_master_lookup' => false,
+                'incomplete_composite_code_requires_master_lookup' => false,
                 self::WORKFLOW_CATALOG_BODY => [
                     'grouped_varios_allowed' => false,
                     'composite_code_allowed_as_product' => false,
+                    'incomplete_composite_code_allowed_as_product' => false,
                     'automatic_export_requires_product' => true,
                     'duplicate_catalog_section_requires_review' => true,
                     'duplicate_catalog_section_blocks_only_affected_section' => true,
@@ -189,6 +191,10 @@ class ExternalFormatSamplesAuditService
                     'grouped_varios_allowed' => true,
                     'grouped_varios_requires_master_lookup' => false,
                     'grouped_varios_exportable_automatically' => true,
+                    'composite_code_manual_allowed' => true,
+                    'composite_code_exportable_automatically' => false,
+                    'incomplete_composite_code_manual_allowed' => false,
+                    'incomplete_composite_code_severity' => 'blocked',
                 ],
             ],
         ];
@@ -240,6 +246,7 @@ class ExternalFormatSamplesAuditService
         $containerPaths = [];
         $variosExamples = [];
         $compositeExamples = [];
+        $incompleteCompositeExamples = [];
         $categoryGroupEmptyRows = 0;
 
         foreach (array_slice($lines, 1) as $offset => $line) {
@@ -268,8 +275,35 @@ class ExternalFormatSamplesAuditService
             if ($classification['line_type'] === 'composite_code' && count($compositeExamples) < $sampleSize) {
                 $compositeExamples[] = [
                     'line' => $lineNumber,
-                    'code' => $code,
+                    'original_code' => $code,
+                    'component_codes' => $classification['component_codes'],
+                    'component_count' => $classification['component_count'],
                     'parseable_codes' => $classification['parseable_codes'],
+                    'requires_master_lookup' => $classification['requires_master_lookup'],
+                    'requires_review' => $classification['requires_review'],
+                    'manual_allowed' => $classification['manual_allowed'],
+                    'exportable_automatically' => $classification['exportable_automatically'],
+                    'severity' => $classification['severity'],
+                    'recommendation' => $classification['recommendation'],
+                ];
+            }
+
+            if ($classification['line_type'] === 'incomplete_composite_code'
+                && count($incompleteCompositeExamples) < $sampleSize) {
+                $incompleteCompositeExamples[] = [
+                    'line' => $lineNumber,
+                    'original_code' => $code,
+                    'component_codes' => $classification['component_codes'],
+                    'component_count' => $classification['component_count'],
+                    'missing_component' => $classification['missing_component'],
+                    'problem' => $classification['problem'],
+                    'requires_master_lookup' => $classification['requires_master_lookup'],
+                    'requires_review' => $classification['requires_review'],
+                    'manual_allowed' => $classification['manual_allowed'],
+                    'exportable_automatically' => $classification['exportable_automatically'],
+                    'severity' => $classification['severity'],
+                    'recommendation' => $classification['recommendation'],
+                    'warning' => $classification['warning'],
                 ];
             }
 
@@ -304,7 +338,14 @@ class ExternalFormatSamplesAuditService
                 'requires_master_lookup' => $classification['requires_master_lookup'],
                 'workflow_status' => $classification['workflow_status'],
                 'requires_review' => $classification['requires_review'],
+                'manual_allowed' => $classification['manual_allowed'],
                 'exportable_automatically' => $classification['exportable_automatically'],
+                'component_codes' => $classification['component_codes'],
+                'component_count' => $classification['component_count'],
+                'missing_component' => $classification['missing_component'],
+                'severity' => $classification['severity'],
+                'recommendation' => $classification['recommendation'],
+                'problem' => $classification['problem'],
                 'values' => $this->rowMap($headers, $columns),
             ];
         }
@@ -336,6 +377,7 @@ class ExternalFormatSamplesAuditService
             'category_group_empty_rows' => $categoryGroupEmptyRows,
             'varios_examples' => $variosExamples,
             'composite_examples' => $compositeExamples,
+            'incomplete_composite_examples' => $incompleteCompositeExamples,
             'examples' => array_slice($rows, 0, $sampleSize),
         ];
     }
@@ -401,7 +443,7 @@ class ExternalFormatSamplesAuditService
     }
 
     /**
-     * @return array{line_type: string, workflow_type: string, workflow_status: string, requires_master_lookup: bool, requires_review: bool, exportable_automatically: bool, parseable_codes: array<int, string>}
+     * @return array<string, mixed>
      */
     public function classifyCode(?string $code, string $workflowType): array
     {
@@ -409,25 +451,32 @@ class ExternalFormatSamplesAuditService
         $code = trim((string) $code);
 
         if ($code === '') {
-            return $this->classification('empty', $workflowType);
+            return $this->classification('empty', $workflowType, $code);
         }
 
         if (mb_strtoupper($code, 'UTF-8') === 'VARIOS') {
-            return $this->classification('grouped_varios', $workflowType);
+            return $this->classification('grouped_varios', $workflowType, $code);
         }
 
         if (preg_match('/^\d+$/', $code) === 1) {
-            return $this->classification('product', $workflowType, [$code]);
+            return $this->classification('product', $workflowType, $code, [$code]);
+        }
+
+        if (preg_match('/^\d+(?:\s*-\s*\d+)+$/', $code) === 1) {
+            preg_match_all('/\d+/', $code, $matches);
+
+            return $this->classification('composite_code', $workflowType, $code, $matches[0]);
         }
 
         if (str_contains($code, '-')
-            && preg_match('/^\d+(?:\s*-\s*\d*)+(?:\s*)$/', $code) === 1) {
+            && preg_match('/^[\d\s-]+$/', $code) === 1
+            && preg_match('/\d/', $code) === 1) {
             preg_match_all('/\d+/', $code, $matches);
 
-            return $this->classification('composite_code', $workflowType, $matches[0]);
+            return $this->classification('incomplete_composite_code', $workflowType, $code, $matches[0]);
         }
 
-        return $this->classification('invalid', $workflowType);
+        return $this->classification('invalid', $workflowType, $code);
     }
 
     /**
@@ -535,7 +584,14 @@ class ExternalFormatSamplesAuditService
                 'line_type' => $classification['line_type'],
                 'workflow_status' => $classification['workflow_status'],
                 'requires_review' => $classification['requires_review'],
+                'manual_allowed' => $classification['manual_allowed'],
                 'exportable_automatically' => $classification['exportable_automatically'],
+                'component_codes' => $classification['component_codes'],
+                'component_count' => $classification['component_count'],
+                'missing_component' => $classification['missing_component'],
+                'severity' => $classification['severity'],
+                'recommendation' => $classification['recommendation'],
+                'problem' => $classification['problem'],
                 'values' => $this->rowMap($headers, $values),
             ];
         }
@@ -1028,34 +1084,77 @@ class ExternalFormatSamplesAuditService
         return ['line' => $lineNumber, 'values' => $this->rowMap($headers, $columns)];
     }
 
-    private function classification(string $lineType, string $workflowType, array $parseableCodes = []): array
-    {
+    private function classification(
+        string $lineType,
+        string $workflowType,
+        string $originalCode,
+        array $componentCodes = [],
+    ): array {
         $requiresMasterLookup = $lineType === 'product';
         $workflowStatus = 'valid';
         $requiresReview = false;
         $exportableAutomatically = $lineType === 'product';
+        $manualAllowed = false;
+        $severity = null;
+        $recommendation = null;
+        $problem = null;
+        $warning = null;
+        $missingComponent = $lineType === 'incomplete_composite_code';
 
         if ($workflowType === self::WORKFLOW_CATALOG_BODY
-            && in_array($lineType, ['composite_code', 'grouped_varios'], true)) {
+            && in_array($lineType, ['composite_code', 'incomplete_composite_code', 'grouped_varios'], true)) {
             $workflowStatus = 'invalid_for_catalog_body';
             $requiresReview = true;
             $exportableAutomatically = false;
+            $severity = in_array($lineType, ['composite_code', 'incomplete_composite_code'], true)
+                ? 'blocked'
+                : null;
+            $recommendation = $lineType === 'incomplete_composite_code'
+                ? 'correct_code_manually'
+                : null;
         } elseif ($workflowType === self::WORKFLOW_PROMO_TAPA && $lineType === 'grouped_varios') {
             $exportableAutomatically = true;
+        } elseif ($workflowType === self::WORKFLOW_PROMO_TAPA && $lineType === 'composite_code') {
+            $workflowStatus = 'requires_review';
+            $requiresReview = true;
+            $manualAllowed = true;
+            $exportableAutomatically = false;
+            $severity = 'review';
+            $recommendation = 'manual_review';
+        } elseif ($workflowType === self::WORKFLOW_PROMO_TAPA && $lineType === 'incomplete_composite_code') {
+            $workflowStatus = 'requires_review';
+            $requiresReview = true;
+            $exportableAutomatically = false;
+            $severity = 'blocked';
+            $recommendation = 'correct_code_manually';
         } elseif ($lineType !== 'product') {
             $workflowStatus = 'requires_review';
             $requiresReview = true;
             $exportableAutomatically = false;
         }
 
+        if ($lineType === 'incomplete_composite_code') {
+            $problem = 'incomplete_composite_code';
+            $warning = 'El código compuesto está incompleto y debe corregirse manualmente antes de exportar.';
+        }
+
         return [
+            'original_code' => $originalCode,
             'line_type' => $lineType,
             'workflow_type' => $workflowType,
             'workflow_status' => $workflowStatus,
             'requires_master_lookup' => $requiresMasterLookup,
             'requires_review' => $requiresReview,
+            'manual_allowed' => $manualAllowed,
             'exportable_automatically' => $exportableAutomatically,
-            'parseable_codes' => $parseableCodes,
+            'component_codes' => $componentCodes,
+            'component_count' => count($componentCodes),
+            'missing_component' => $missingComponent,
+            'severity' => $severity,
+            'recommendation' => $recommendation,
+            'problem' => $problem,
+            'warning' => $warning,
+            'parseable_codes' => $componentCodes,
         ];
     }
 
@@ -1064,6 +1163,7 @@ class ExternalFormatSamplesAuditService
         return [
             'product' => 0,
             'composite_code' => 0,
+            'incomplete_composite_code' => 0,
             'grouped_varios' => 0,
             'empty' => 0,
             'invalid' => 0,
@@ -1075,6 +1175,7 @@ class ExternalFormatSamplesAuditService
         return [
             'product' => 0,
             'composite_code' => 0,
+            'incomplete_composite_code' => 0,
             'grouped_varios' => 0,
             'invalid_for_catalog_body' => 0,
             'requires_review' => 0,

@@ -98,6 +98,7 @@ class AuditExternalFormatSamples extends Command
                     ->only([
                         'product',
                         'composite_code',
+                        'incomplete_composite_code',
                         'grouped_varios',
                         'invalid_for_catalog_body',
                         'requires_review',

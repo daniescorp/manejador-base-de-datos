@@ -67,7 +67,11 @@ Un código simple numérico, por ejemplo `30385`, `61267` o `220483`. Es el úni
 
 ### `composite_code`
 
-Una agrupación explícita o incompleta mediante guiones, por ejemplo `40104 - 40105`, `260161 - 260179` o `60157 -`. Sus componentes numéricos se reportan cuando son parseables, pero la línea no se trata como SKU simple ni se busca como una única clave maestra.
+Una agrupación completa mediante guiones, por ejemplo `40104 - 40105` o `260161 - 260179`. Sus componentes numéricos se reportan en `component_codes`, pero la línea no se trata como SKU simple ni se busca como una única clave maestra. En `promo_tapa` queda `requires_review`, admite resolución manual y no se exporta automáticamente.
+
+### `incomplete_composite_code`
+
+Un código con guion y algún componente ausente, como `60157 -`. El auditor reporta los componentes detectables, `missing_component = true`, `requires_review = true`, `manual_allowed = false`, `severity = blocked` y la recomendación de corregirlo manualmente. No intenta adivinar el componente faltante.
 
 ### `grouped_varios`
 
@@ -76,7 +80,7 @@ Una agrupación explícita o incompleta mediante guiones, por ejemplo `40104 - 4
 - En `catalog_body` no está permitido: se reporta como `grouped_varios` y además como `invalid_for_catalog_body`/`requires_review`; no se exporta automáticamente.
 - En `promo_tapa` puede representar una familia o agrupación promocional manual con precio único. No pertenece a `master_products`, no requiere buscar `codigo_producto = VARIOS` y puede exportarse si la plantilla lo permite. El archivo externo manda marca, descripción, UXB, precio e imagen, incluida `.\imagenes\VARIOS.png`.
 
-El mismo criterio contextual se aplica a `composite_code`: nunca es un SKU simple. En `catalog_body` es inválido para exportación automática; en promociones permanece como agrupación que requiere revisión o resolución explícita.
+`composite_code` e `incomplete_composite_code` nunca son SKU simples. En `catalog_body` ambos son inválidos para exportación automática. En `promo_tapa`, un compuesto completo permite decidir manualmente si se conserva, elige un principal, separa, corrige o descarta; uno incompleto permanece bloqueado hasta corregir el archivo. Ninguno genera productos maestros ni provoca una búsqueda por el texto compuesto completo.
 
 ### `empty` e `invalid`
 
@@ -88,7 +92,7 @@ Una celda de código vacía se reporta como `empty`. Cualquier valor que no cump
 
 El exportador futuro cruzará por `CODIGO`/SKU únicamente las líneas `product`. Los códigos compuestos se resolverán como agrupaciones. `VARIOS` sólo podrá exportarse con los valores comerciales del archivo externo en workflows promocionales que lo permitan, sin crear ni exigir un producto maestro artificial; queda bloqueado en `catalog_body`.
 
-El informe mantiene conteos separados por `workflow_type` para `product`, `composite_code`, `grouped_varios`, `invalid_for_catalog_body` y `requires_review`. Los tres primeros describen qué se detectó; los dos últimos expresan la decisión contextual, por lo que un código compuesto de cuerpo puede incrementar tanto `composite_code` como `invalid_for_catalog_body` y `requires_review`.
+El informe mantiene conteos separados por `workflow_type` para `product`, `composite_code`, `incomplete_composite_code`, `grouped_varios`, `invalid_for_catalog_body` y `requires_review`. Los tipos de línea describen qué se detectó; los estados expresan la decisión contextual, por lo que un código compuesto de cuerpo puede incrementar tanto su tipo como `invalid_for_catalog_body` y `requires_review`.
 
 ## Muestras locales
 

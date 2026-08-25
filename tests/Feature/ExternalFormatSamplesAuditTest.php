@@ -56,7 +56,7 @@ class ExternalFormatSamplesAuditTest extends TestCase
         $this->assertTrue($product['requires_master_lookup']);
         $this->assertTrue($product['exportable_automatically']);
 
-        foreach (['40104 - 40105', '260161 - 260179', '60157 -'] as $code) {
+        foreach (['40104 - 40105', '260161 - 260179'] as $code) {
             $classification = $service->classifyCode(
                 $code,
                 ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY,
@@ -68,6 +68,17 @@ class ExternalFormatSamplesAuditTest extends TestCase
             $this->assertTrue($classification['requires_review']);
             $this->assertFalse($classification['exportable_automatically']);
         }
+
+        $incompleteCatalogComposite = $service->classifyCode(
+            '60157 -',
+            ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY,
+        );
+        $this->assertSame('incomplete_composite_code', $incompleteCatalogComposite['line_type']);
+        $this->assertSame('invalid_for_catalog_body', $incompleteCatalogComposite['workflow_status']);
+        $this->assertTrue($incompleteCatalogComposite['requires_review']);
+        $this->assertFalse($incompleteCatalogComposite['requires_master_lookup']);
+        $this->assertFalse($incompleteCatalogComposite['exportable_automatically']);
+        $this->assertSame('blocked', $incompleteCatalogComposite['severity']);
 
         $catalogVarios = $service->classifyCode(
             'VARIOS',
@@ -87,6 +98,83 @@ class ExternalFormatSamplesAuditTest extends TestCase
         $this->assertFalse($promoVarios['requires_master_lookup']);
         $this->assertFalse($promoVarios['requires_review']);
         $this->assertTrue($promoVarios['exportable_automatically']);
+    }
+
+    public function test_promo_composite_codes_require_explicit_manual_resolution(): void
+    {
+        $service = $this->service();
+        $cases = [
+            '40104 - 40105' => ['40104', '40105'],
+            '260161 - 260179' => ['260161', '260179'],
+        ];
+
+        foreach ($cases as $code => $components) {
+            $classification = $service->classifyCode(
+                $code,
+                ExternalFormatSamplesAuditService::WORKFLOW_PROMO_TAPA,
+            );
+
+            $this->assertSame($code, $classification['original_code']);
+            $this->assertSame('composite_code', $classification['line_type']);
+            $this->assertSame($components, $classification['component_codes']);
+            $this->assertSame($components, $classification['parseable_codes']);
+            $this->assertSame(2, $classification['component_count']);
+            $this->assertFalse($classification['missing_component']);
+            $this->assertFalse($classification['requires_master_lookup']);
+            $this->assertTrue($classification['requires_review']);
+            $this->assertTrue($classification['manual_allowed']);
+            $this->assertFalse($classification['exportable_automatically']);
+            $this->assertSame('review', $classification['severity']);
+            $this->assertSame('manual_review', $classification['recommendation']);
+        }
+    }
+
+    public function test_incomplete_promo_composite_is_blocked_until_manually_corrected(): void
+    {
+        $classification = $this->service()->classifyCode(
+            '60157 -',
+            ExternalFormatSamplesAuditService::WORKFLOW_PROMO_TAPA,
+        );
+
+        $this->assertSame('60157 -', $classification['original_code']);
+        $this->assertSame('incomplete_composite_code', $classification['line_type']);
+        $this->assertSame(['60157'], $classification['component_codes']);
+        $this->assertSame(1, $classification['component_count']);
+        $this->assertTrue($classification['missing_component']);
+        $this->assertSame('incomplete_composite_code', $classification['problem']);
+        $this->assertFalse($classification['requires_master_lookup']);
+        $this->assertTrue($classification['requires_review']);
+        $this->assertFalse($classification['manual_allowed']);
+        $this->assertFalse($classification['exportable_automatically']);
+        $this->assertSame('blocked', $classification['severity']);
+        $this->assertSame('correct_code_manually', $classification['recommendation']);
+        $this->assertStringContainsString('corregirse manualmente', $classification['warning']);
+    }
+
+    public function test_promo_text_report_separates_complete_and_incomplete_composites(): void
+    {
+        $file = $this->textFile(
+            "CODIGO\tMARCA\n"
+            ."40104 - 40105\tMARCA A\n"
+            ."260161 - 260179\tMARCA B\n"
+            ."60157 -\tMARCA C",
+        );
+
+        $report = $this->service()->auditTextFile(
+            $file,
+            workflowType: ExternalFormatSamplesAuditService::WORKFLOW_PROMO_TAPA,
+        );
+
+        $this->assertSame(2, $report['line_types']['composite_code']);
+        $this->assertSame(1, $report['line_types']['incomplete_composite_code']);
+        $this->assertCount(2, $report['composite_examples']);
+        $this->assertCount(1, $report['incomplete_composite_examples']);
+        $this->assertSame(['40104', '40105'], $report['composite_examples'][0]['component_codes']);
+        $this->assertFalse($report['composite_examples'][0]['requires_master_lookup']);
+        $this->assertTrue($report['composite_examples'][0]['manual_allowed']);
+        $this->assertSame('blocked', $report['incomplete_composite_examples'][0]['severity']);
+        $this->assertFalse($report['incomplete_composite_examples'][0]['requires_master_lookup']);
+        $this->assertFalse($report['incomplete_composite_examples'][0]['manual_allowed']);
     }
 
     public function test_duplicate_headers_and_irregular_rows_are_reported_without_breaking_audit(): void
@@ -130,7 +218,10 @@ class ExternalFormatSamplesAuditTest extends TestCase
             $queries[] = $query->sql;
         });
         $this->textFile(
-            "CODIGO\tMARCA\tDESCRIPCION\nVARIOS\tQUARA\tVino varietal 750cc",
+            "CODIGO\tMARCA\tDESCRIPCION\n"
+            ."VARIOS\tQUARA\tVino varietal 750cc\n"
+            ."40104 - 40105\tMARCA\tAgrupación comercial\n"
+            ."60157 -\tMARCA\tCódigo incompleto",
             $directory.DIRECTORY_SEPARATOR.ExternalFormatSamplesAuditService::PROMOTIONS_OUTPUT,
         );
 
@@ -145,6 +236,10 @@ class ExternalFormatSamplesAuditTest extends TestCase
         );
         $this->assertTrue($report['rules']['promo_tapa']['grouped_varios_allowed']);
         $this->assertFalse($report['rules']['promo_tapa']['grouped_varios_requires_master_lookup']);
+        $this->assertTrue($report['rules']['promo_tapa']['composite_code_manual_allowed']);
+        $this->assertFalse($report['rules']['promo_tapa']['composite_code_exportable_automatically']);
+        $this->assertFalse($report['rules']['promo_tapa']['incomplete_composite_code_manual_allowed']);
+        $this->assertSame('blocked', $report['rules']['promo_tapa']['incomplete_composite_code_severity']);
         $this->assertFalse($report['rules']['catalog_body']['grouped_varios_allowed']);
         $this->assertSame([], array_values(array_filter(
             scandir($directory) ?: [],

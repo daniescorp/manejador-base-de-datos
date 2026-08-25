@@ -24,9 +24,17 @@ Mientras no exista un importador que entregue ese mapa externo, el comando conse
 
 ## Relación con workflows y líneas especiales
 
-- En `catalog_body`, cada línea exportable debe ser `product`; `VARIOS` y códigos compuestos requieren revisión y no se exportan automáticamente.
+- En `catalog_body`, cada línea exportable debe ser `product`; `VARIOS`, `composite_code` e `incomplete_composite_code` requieren revisión, reciben `invalid_for_catalog_body` y no se exportan automáticamente.
 - En `promo_tapa`, `promo_diaria` y ofertas varias, `VARIOS` puede ser una agrupación comercial válida si la plantilla lo permite. No se busca como producto maestro.
 - El formateo de precio es idéntico en todos los workflows; la validez de la línea continúa dependiendo de las reglas de su workflow.
+
+### Códigos compuestos en promociones
+
+Un compuesto completo de `promo_tapa`, como `40104 - 40105` o `260161 - 260179`, se conserva como una línea comercial revisable y nunca como SKU simple. El auditor informa `line_type = composite_code`, sus `component_codes`, `requires_review = true`, `manual_allowed = true` y `exportable_automatically = false`. No busca el texto completo en `master_products.codigo_producto`, no crea un producto maestro artificial, no mezcla los componentes ni elige uno automáticamente.
+
+La futura UI deberá permitir mantener la línea comercial tal cual, elegir un producto principal, separarla en varias líneas, corregir el código o descartarla. Hasta que exista una decisión explícita, el compuesto completo no continúa al exportador automático.
+
+Un valor como `60157 -` es distinto: falta un componente y se clasifica como `incomplete_composite_code`. Aunque se reporten los dígitos parseables, recibe `missing_component = true`, `manual_allowed = false`, `severity = blocked` y recomendación `correct_code_manually`. No se completa, corrige ni exporta por inferencia; primero debe corregirse el archivo recibido.
 
 ## Secciones duplicadas en el cuerpo de catálogo
 
