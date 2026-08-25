@@ -317,6 +317,44 @@ class ProcessProductStagingRowsCommandTest extends TestCase
         $this->assertSame('ARLISTAN', $row->marca_original);
     }
 
+    public function test_command_processes_the_norton_elegido_case_without_approval_side_effects(): void
+    {
+        $batch = $this->createBatch();
+        $rawData = ['Nombre Sku' => 'VINO NORTON ELEGIDO CHARDONNAY', 'Marca' => 'ELEGIDO'];
+        $row = $this->createRow($batch, [
+            'nombre_sku_original' => 'VINO NORTON ELEGIDO CHARDONNAY',
+            'marca_original' => 'ELEGIDO',
+            'raw_data' => $rawData,
+        ]);
+        $this->createRule([
+            'detected_value' => 'ELEGIDO',
+            'replacement_value' => 'NORTON',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'context' => 'nombre_sku_contains:NORTON',
+        ]);
+        $masterCount = MasterProduct::query()->count();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        $result = $this->runJson($batch, ['--id' => $row->getKey()]);
+        $row->refresh();
+
+        $this->assertSame(1, $result['processed_rows']);
+        $this->assertSame('NORTON', $row->normalized_preview['marca_homologada']);
+        $this->assertSame('Vino elegido chardonnay', $row->normalized_preview['descripcion_catalogo']);
+        $this->assertSame('VINO NORTON ELEGIDO CHARDONNAY', $row->nombre_sku_original);
+        $this->assertSame('ELEGIDO', $row->marca_original);
+        $this->assertEquals($rawData, $row->raw_data);
+        $this->assertFalse($row->requires_review);
+        $this->assertSame('previewed', $row->status);
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertNull($row->master_product_id);
+        $this->assertSame($masterCount, MasterProduct::query()->count());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+        $this->assertSame(0, $row->suggestions()->whereIn('status', ['approved', 'applied', 'rejected'])->count());
+    }
+
     public function test_description_rules_remain_compatible_with_descripcion_catalogo(): void
     {
         $batch = $this->createBatch();

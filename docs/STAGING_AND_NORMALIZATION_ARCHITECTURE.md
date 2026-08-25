@@ -92,6 +92,8 @@ El panel Filament permite crear, consultar, editar, activar y desactivar reglas 
 
 `ProductStagingAnalyzer` analiza `descripcion_catalogo` a partir de `nombre_sku_original` y también puede generar sugerencias para `marca_homologada` a partir de `marca_original`. Las marcas se cotejan por igualdad exacta, sin distinguir mayúsculas y minúsculas y descartando solo los espacios de los extremos; no se aplican por coincidencia parcial. `marca_original` siempre se conserva intacta y casos como `ARLISTAN` → `Arlistán` o `MANON` → `Manón` se tratan como homologaciones de marca, no como palabras comunes de la descripción.
 
+Las reglas de marca pueden agregar condiciones sobre el nombre original. El caso `ELEGIDO` → `NORTON` usa `context = nombre_sku_contains:NORTON`: solo se activa si `NORTON` está presente como token completo. En `VINO NORTON ELEGIDO CHARDONNAY`, el preview homologa la marca como `NORTON`, remueve ese token de `descripcion_catalogo` y conserva `elegido` como línea comercial. La regla no transforma globalmente todas las marcas `ELEGIDO`. La presentación futura `750CC` se completará manualmente después de aprobar el producto y no se infiere durante este análisis.
+
 ### Servicio inicial de composición de previsualización
 
 El sistema cuenta con un servicio que combina las sugerencias aplicables en `product_staging_rows.normalized_preview` sin aprobarlas ni modificar productos maestros. La previsualización mantiene la estructura existente de `descripcion_catalogo` e incorpora `source_brand`, `marca_homologada` y los identificadores de sugerencias de marca separados entre aplicados, pendientes de revisión y bloqueados.

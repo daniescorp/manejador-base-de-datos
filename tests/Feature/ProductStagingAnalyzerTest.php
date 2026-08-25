@@ -688,6 +688,46 @@ class ProductStagingAnalyzerTest extends TestCase
         );
     }
 
+    public function test_elegido_is_homologated_as_norton_only_when_norton_is_a_complete_name_token(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'ELEGIDO',
+            'replacement_value' => 'NORTON',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'context' => 'nombre_sku_contains:NORTON',
+        ]);
+        $rawData = ['Nombre Sku' => 'VINO NORTON ELEGIDO CHARDONNAY', 'Marca' => 'ELEGIDO'];
+        $matchingRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'VINO NORTON ELEGIDO CHARDONNAY',
+            'marca_original' => 'ELEGIDO',
+            'raw_data' => $rawData,
+        ]);
+        $outsideContextRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'VINO ELEGIDO CHARDONNAY',
+            'marca_original' => 'ELEGIDO',
+        ]);
+        $partialTokenRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'VINO NORTONIA ELEGIDO CHARDONNAY',
+            'marca_original' => 'ELEGIDO',
+        ]);
+
+        foreach ([$matchingRow, $outsideContextRow, $partialTokenRow] as $row) {
+            $this->analyzer()->analyze($row);
+        }
+
+        $suggestion = $this->suggestionFor($matchingRow, $rule, 'marca_homologada');
+        $matchingRow->refresh();
+
+        $this->assertSame('NORTON', $suggestion->suggested_value);
+        $this->assertSame('ELEGIDO', $matchingRow->marca_original);
+        $this->assertSame('VINO NORTON ELEGIDO CHARDONNAY', $matchingRow->nombre_sku_original);
+        $this->assertEquals($rawData, $matchingRow->raw_data);
+        $this->assertFalse($matchingRow->requires_review);
+        $this->assertSame(0, $this->suggestionQuery($outsideContextRow, $rule, 'marca_homologada')->count());
+        $this->assertSame(0, $this->suggestionQuery($partialTokenRow, $rule, 'marca_homologada')->count());
+    }
+
     public function test_invalid_original_brands_are_marked_for_review(): void
     {
         foreach ([null, '', '   ', '0', 0] as $brand) {

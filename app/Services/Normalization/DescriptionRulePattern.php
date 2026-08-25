@@ -67,6 +67,44 @@ class DescriptionRulePattern
         return preg_match($this->pattern($rule), $text) === 1;
     }
 
+    public function matchesContext(string $text, NormalizationRule $rule): bool
+    {
+        $context = trim((string) $rule->context);
+
+        if ($context === '') {
+            return true;
+        }
+
+        $prefix = 'nombre_sku_contains:';
+
+        if (! str_starts_with($context, $prefix)) {
+            return false;
+        }
+
+        $expectedPhrase = preg_replace(
+            '/\s+/u',
+            ' ',
+            trim(mb_substr($context, mb_strlen($prefix, 'UTF-8'), null, 'UTF-8')),
+        );
+
+        if (blank($expectedPhrase)) {
+            return false;
+        }
+
+        $phrasePattern = implode(
+            '\\h+',
+            array_map(
+                static fn (string $token): string => preg_quote($token, '~'),
+                explode(' ', $expectedPhrase),
+            ),
+        );
+
+        return preg_match(
+            "~(?<![\\p{L}\\p{N}_]){$phrasePattern}(?![\\p{L}\\p{N}_])~iu",
+            $text,
+        ) === 1;
+    }
+
     private function pattern(NormalizationRule $rule): string
     {
         $measurement = $this->measurementDefinition($rule);

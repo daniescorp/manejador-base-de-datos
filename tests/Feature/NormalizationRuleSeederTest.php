@@ -334,6 +334,29 @@ class NormalizationRuleSeederTest extends TestCase
         }
     }
 
+    public function test_elegido_is_seeded_as_an_idempotent_norton_contextual_brand_rule(): void
+    {
+        $identity = [
+            'detected_value' => 'ELEGIDO',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'context' => 'nombre_sku_contains:NORTON',
+        ];
+        $rule = NormalizationRule::query()->where($identity)->sole();
+
+        $this->assertSame('NORTON', $rule->replacement_value);
+        $this->assertTrue($rule->is_automatic);
+        $this->assertTrue($rule->requires_preview);
+        $this->assertFalse($rule->requires_review);
+        $this->assertSame('high', $rule->confidence_level);
+        $this->assertTrue($rule->active);
+        $this->assertStringContainsString('línea comercial', $rule->notes);
+
+        $this->seed(NormalizationRuleSeeder::class);
+
+        $this->assertSame(1, NormalizationRule::query()->where($identity)->count());
+    }
+
     public function test_envelope_counts_are_seeded_as_an_automatic_contextual_rule(): void
     {
         $rule = $this->rule(

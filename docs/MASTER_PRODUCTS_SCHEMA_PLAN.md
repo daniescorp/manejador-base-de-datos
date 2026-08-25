@@ -377,6 +377,8 @@ Se adopta `codigo_producto` como nombre funcional. Los campos heredados de `mast
 
 La primera ampliación estructural v2 ya agregó a `master_products` los campos mínimos originales, homologados, de salida y control, manteniendo los campos heredados y sin crear una tabla `master_products_v2`. Esta etapa no realiza *backfill* ni impone unicidad sobre `codigo_producto`.
 
+Para el producto `61267`, la normalización previa a una futura aprobación interpreta `NORTON` como marca homologada y `ELEGIDO` como línea comercial únicamente cuando el nombre original contiene el token completo `NORTON`. El preview esperado es `Vino elegido chardonnay`; `ELEGIDO` → `NORTON` no es una homologación global. La medida estable `750CC` se cargará manualmente después de aprobar y no se infiere automáticamente desde este caso.
+
 ## Orden recomendado
 
 1. Analizar la base maestra real.

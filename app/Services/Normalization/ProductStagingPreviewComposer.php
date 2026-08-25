@@ -87,13 +87,19 @@ class ProductStagingPreviewComposer
             $brandPendingReviewIds = [];
             $brandBlockedIds = [];
             $selectedBrandPreview = null;
+            $selectedBrandRule = null;
 
             foreach ($this->pendingSuggestions($stagingRow, self::BRAND_FIELD) as $suggestion) {
                 $rule = $suggestion->rule;
                 $proposedBrand = $this->proposedBrand($suggestion, $rule);
 
                 if ($brandIsInvalid
-                    || ! $this->isBrandSuggestionApplicable($brandSource, $proposedBrand, $rule)) {
+                    || ! $this->isBrandSuggestionApplicable(
+                        $brandSource,
+                        $descriptionSource,
+                        $proposedBrand,
+                        $rule,
+                    )) {
                     $brandBlockedIds[] = $suggestion->getKey();
 
                     continue;
@@ -101,6 +107,7 @@ class ProductStagingPreviewComposer
 
                 if ($selectedBrandPreview === null) {
                     $selectedBrandPreview = $proposedBrand;
+                    $selectedBrandRule = $rule;
                     $brandPreview = $proposedBrand;
                 } elseif ($proposedBrand !== $selectedBrandPreview) {
                     $brandBlockedIds[] = $suggestion->getKey();
@@ -119,11 +126,15 @@ class ProductStagingPreviewComposer
             $brandPreview = $this->normalizePreviewWhitespace($brandPreview);
 
             if (! $brandIsInvalid) {
-                foreach (array_unique([
-                    $brandPreview,
-                    $brandSource,
-                    (string) data_get($stagingRow->normalized_preview, 'source_brand'),
-                ]) as $descriptionBrand) {
+                $descriptionBrands = [$this->brandIsInvalid($brandPreview)
+                    ? $brandSource
+                    : $brandPreview];
+
+                if ($selectedBrandRule === null || blank($selectedBrandRule->context)) {
+                    $descriptionBrands[] = $brandSource;
+                }
+
+                foreach (array_unique($descriptionBrands) as $descriptionBrand) {
                     $descriptionPreview = $this->removeCompleteBrandFromDescription(
                         $descriptionPreview,
                         $descriptionBrand,
@@ -281,6 +292,7 @@ class ProductStagingPreviewComposer
 
     private function isBrandSuggestionApplicable(
         string $source,
+        string $descriptionSource,
         ?string $proposedBrand,
         ?NormalizationRule $rule,
     ): bool {
@@ -290,7 +302,8 @@ class ProductStagingPreviewComposer
             && $rule->rule_type !== 'no_change'
             && filled($rule->detected_value)
             && filled($proposedBrand)
-            && $this->brandsMatch($source, $rule->detected_value);
+            && $this->brandsMatch($source, $rule->detected_value)
+            && $this->descriptionRulePattern->matchesContext($descriptionSource, $rule);
     }
 
     private function brandRuleRequiresReview(NormalizationRule $rule): bool

@@ -14,7 +14,9 @@ Ya existe también un importador seguro desde Excel hacia `product_staging_rows`
 
 Antes de la revisión o aprobación, el compositor limpia espacios múltiples, tabs, saltos internos y extremos únicamente en los previews normalizados. `nombre_sku_original`, `marca_original` y `raw_data` mantienen exactamente el contenido importado desde Excel.
 
-Como paso final del preview, `descripcion_catalogo` elimina la marca cuando coincide como token o frase completa con `marca_homologada` o `marca_original`. La marca se conserva separada para las salidas de InDesign, Shopify y la app; esta limpieza no altera los datos originales ni implica aprobación.
+Como paso final del preview, `descripcion_catalogo` elimina la marca cuando coincide como token o frase completa. Si existe una `marca_homologada` distinta, esa es la marca principal que se remueve y `marca_original` se conserva en la descripción cuando funciona como línea o variante; si son equivalentes o no hay homologada, se usa la original como fallback. La marca se conserva separada para las salidas de InDesign, Shopify y la app; esta limpieza no altera los datos originales ni implica aprobación.
+
+El caso controlado `VINO NORTON ELEGIDO CHARDONNAY`, con `marca_original = ELEGIDO`, aplica una regla contextual solo por la presencia del token completo `NORTON`: genera `marca_homologada = NORTON` y `descripcion_catalogo = Vino elegido chardonnay`. No existe una sustitución global `ELEGIDO` → `NORTON`. La medida futura `750CC` se incorporará manualmente después de aprobar el producto, sin inferirla durante el import o el preview.
 
 El preview también interpreta cantidades como `50s` como `50 sobres` exclusivamente cuando el nombre aporta contexto de té, infusión o producto ensobrado. Si la descripción ya expresa `sin ensobrar`, se eliminan los residuos completos `NS`/`NS.` sin modificar `nombre_sku_original` ni `raw_data`.
 

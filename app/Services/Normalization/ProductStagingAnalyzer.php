@@ -63,7 +63,8 @@ class ProductStagingAnalyzer
                 $reviewReasons[] = 'Marca original vacía o no válida';
             } else {
                 foreach ($this->activeBrandRules() as $rule) {
-                    if (! $this->matchesBrand($brandSource, $rule->detected_value)) {
+                    if (! $this->matchesBrand($brandSource, $rule->detected_value)
+                        || ! $this->descriptionRulePattern->matchesContext($descriptionSource, $rule)) {
                         continue;
                     }
 

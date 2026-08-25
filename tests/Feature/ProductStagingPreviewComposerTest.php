@@ -438,6 +438,48 @@ class ProductStagingPreviewComposerTest extends TestCase
         $this->assertSame('ARLISTÁN', $preview['marca_homologada']);
     }
 
+    public function test_norton_context_uses_the_homologated_brand_and_keeps_elegido_as_the_line(): void
+    {
+        $rawData = ['Nombre Sku' => 'VINO NORTON ELEGIDO CHARDONNAY', 'Marca' => 'ELEGIDO'];
+        $masterProduct = MasterProduct::factory()->create();
+        $row = ProductStagingRow::factory()
+            ->for($masterProduct, 'masterProduct')
+            ->create([
+                'nombre_sku_original' => 'VINO NORTON ELEGIDO CHARDONNAY',
+                'marca_original' => 'ELEGIDO',
+                'raw_data' => $rawData,
+                'requires_review' => false,
+                'review_reason' => null,
+            ]);
+        $this->createRule([
+            'detected_value' => 'ELEGIDO',
+            'replacement_value' => 'NORTON',
+            'rule_type' => 'brand_normalization',
+            'applies_to_field' => 'marca_homologada',
+            'context' => 'nombre_sku_contains:NORTON',
+        ]);
+        $originalSnapshot = $row->only(['nombre_sku_original', 'marca_original', 'raw_data']);
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        app(ProductStagingAnalyzer::class)->analyze($row);
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('NORTON', $preview['marca_homologada']);
+        $this->assertSame('Vino elegido chardonnay', $preview['descripcion_catalogo']);
+        $this->assertStringContainsString('elegido', $preview['descripcion_catalogo']);
+        $this->assertStringNotContainsString('norton', mb_strtolower($preview['descripcion_catalogo'], 'UTF-8'));
+        $this->assertEquals($originalSnapshot, $row->only(['nombre_sku_original', 'marca_original', 'raw_data']));
+        $this->assertFalse($row->requires_review);
+        $this->assertSame('previewed', $row->status);
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+        $this->assertEquals($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+        $this->assertSame(0, $row->suggestions()->whereIn('status', ['approved', 'applied', 'rejected'])->count());
+    }
+
     public function test_it_keeps_the_description_when_brand_removal_would_leave_it_too_short(): void
     {
         $row = ProductStagingRow::factory()->create([

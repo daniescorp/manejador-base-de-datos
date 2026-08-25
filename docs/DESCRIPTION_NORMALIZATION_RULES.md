@@ -241,6 +241,19 @@ PETAKON + VODKA PETAKON FRUTOS ROJOS 750 CC
 → Vodka frutos rojos 750CC
 ```
 
+Cuando `marca_homologada` difiere de `marca_original`, la marca principal que se remueve es la homologada. La original no se elimina también de forma automática porque puede representar una línea o variante comercial, salvo que una regla explícita indique lo contrario. Si ambas marcas son equivalentes, o si no existe una marca homologada, se mantiene la remoción normal con `marca_original` como fallback.
+
+Caso contextual confirmado:
+
+```text
+marca_original: ELEGIDO
+nombre_sku_original: VINO NORTON ELEGIDO CHARDONNAY
+marca_homologada: NORTON
+descripcion_catalogo: Vino elegido chardonnay
+```
+
+La regla `ELEGIDO` → `NORTON` solo aplica cuando `NORTON` aparece como token o frase completa en `nombre_sku_original`. No es una sustitución global: `NORTON` se separa como marca y `ELEGIDO` se conserva como línea comercial. La presentación `750CC` de este producto se cargará manualmente después de la aprobación; no se infiere a partir de este nombre.
+
 ### Regla para titulo_shopify
 
 Shopify puede requerir un título comercial con la marca incluida. Por eso, la marca no se elimina del sistema: se conserva en `marca_original` y `marca_homologada`, separada de la descripción, para reconstruir salidas como `Vodka Petakon frutos rojos 750CC`.

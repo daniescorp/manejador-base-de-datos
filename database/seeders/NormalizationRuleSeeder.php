@@ -12,7 +12,7 @@ class NormalizationRuleSeeder extends Seeder
 {
     use WithoutModelEvents;
 
-    public const RULE_COUNT = 108;
+    public const RULE_COUNT = 109;
 
     public function run(): void
     {
@@ -233,6 +233,15 @@ class NormalizationRuleSeeder extends Seeder
                 requiresReview: true,
                 confidenceLevel: 'contextual',
                 notes: 'Marca con escritura comercial homologada; conservar el valor original y revisar antes de aplicar.',
+                appliesToField: 'marca_homologada',
+            ),
+            ...$this->replacementRules(
+                replacements: [
+                    'ELEGIDO' => 'NORTON',
+                ],
+                ruleType: 'brand_normalization',
+                context: 'nombre_sku_contains:NORTON',
+                notes: 'Cuando la marca original figura como ELEGIDO pero el nombre contiene NORTON, homologar la marca como NORTON y conservar ELEGIDO como línea comercial en la descripción.',
                 appliesToField: 'marca_homologada',
             ),
             ...$this->replacementRules(
