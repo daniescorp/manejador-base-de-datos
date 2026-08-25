@@ -1,0 +1,84 @@
+# Diagnóstico de formatos externos de catálogo y promociones
+
+## Alcance
+
+El diagnóstico separa dos flujos externos y es estrictamente *read-only*: no importa filas, no modifica `master_products`, no crea `product_change_logs`, no aprueba staging ni genera una exportación final. Las muestras comerciales permanecen en una carpeta local ignorada por Git.
+
+El comando disponible es:
+
+```shell
+php artisan app:audit-external-format-samples \
+  --base-path="excel basico/formatos_referencia/2026-08-24-interior" \
+  --json
+```
+
+`--sample=5` controla la cantidad de ejemplos incluidos. El comando no escribe archivos por defecto. Sólo guarda un JSON cuando se proporciona explícitamente `--output=...`.
+
+Las reglas operativas posteriores al diagnóstico, incluido el formato obligatorio de precios externos, se documentan en [Procesos de archivos externos](EXTERNAL_FILE_PROCESSES.md).
+
+## Flujo de catálogo cuerpo general
+
+La entrada de referencia es `08.Cuerpo Int 24.08.xlsx` y su `workflow_type` es `catalog_body`. El auditor informa hojas, dimensiones, bloques no vacíos, encabezados, columnas, rango y filas útiles del primer cuadro, bloques secundarios, notas/totales, categorías o solapas, columnas de precio y columnas asociadas a imágenes, contenedores o cucardas.
+
+Las salidas esperadas son nueve TXT por categoría o solapa:
+
+- ALMACEN;
+- BEBIDAS CON AL;
+- BEBIDAS SIN AL;
+- DESAYUNO;
+- GASTRO;
+- IMPORTADOS;
+- Limpieza;
+- NON FOOD;
+- Perfumería.
+
+Para cada TXT se detectan encoding probable, delimitador, encabezado exacto, columnas repetidas, cantidad de columnas y filas, irregularidades, precios, rutas de imagen, rutas `.ai` y ejemplos. Todos los TXT `INT` se infieren como `catalog_body`. El reporte compara además la estructura de los nueve archivos y la correspondencia aproximada entre sus nombres y las hojas/categorías del Excel.
+
+El cuerpo general admite únicamente líneas `product` con un SKU real. `VARIOS` y los códigos compuestos se detectan estructuralmente para poder contarlos, pero reciben `workflow_status = invalid_for_catalog_body`, `requires_review = true` y `exportable_automatically = false`. No pueden convertirse en una línea válida del cuerpo ni continuar automáticamente al exportador.
+
+## Flujo de ofertas, tapas y promociones
+
+La entrada es `Libro3.xlsx` y su `workflow_type` es `promo_tapa`. El primer bloque con encabezados comerciales se considera el cuadro útil; los bloques posteriores se reportan separadamente como cuadros secundarios o información manual. Esto permite excluir notas, totales y columnas auxiliares antes de diseñar una automatización.
+
+La salida es `TAPA AMBA(1).txt`, también inferida como `promo_tapa`. Se audita con las mismas reglas de TXT y se presta especial atención a sus 15 columnas, categoría/grupo vacíos, tres precios, imagen de producto y recursos `.ai` de contenedores o cucardas.
+
+## Clasificación de líneas
+
+### `product`
+
+Un código simple numérico, por ejemplo `30385`, `61267` o `220483`. Es el único tipo que requiere cruce directo contra `master_products.codigo_producto`.
+
+### `composite_code`
+
+Una agrupación explícita o incompleta mediante guiones, por ejemplo `40104 - 40105`, `260161 - 260179` o `60157 -`. Sus componentes numéricos se reportan cuando son parseables, pero la línea no se trata como SKU simple ni se busca como una única clave maestra.
+
+### `grouped_varios`
+
+`VARIOS` es una detección estructural cuyo tratamiento depende del workflow; no es una excepción global.
+
+- En `catalog_body` no está permitido: se reporta como `grouped_varios` y además como `invalid_for_catalog_body`/`requires_review`; no se exporta automáticamente.
+- En `promo_tapa` puede representar una familia o agrupación promocional manual con precio único. No pertenece a `master_products`, no requiere buscar `codigo_producto = VARIOS` y puede exportarse si la plantilla lo permite. El archivo externo manda marca, descripción, UXB, precio e imagen, incluida `.\imagenes\VARIOS.png`.
+
+El mismo criterio contextual se aplica a `composite_code`: nunca es un SKU simple. En `catalog_body` es inválido para exportación automática; en promociones permanece como agrupación que requiere revisión o resolución explícita.
+
+### `empty` e `invalid`
+
+Una celda de código vacía se reporta como `empty`. Cualquier valor que no cumpla las reglas anteriores se informa como `invalid` para revisión, sin importarlo ni convertirlo en SKU.
+
+## Autoridad de datos
+
+`master_products` no guarda precios. Para líneas `product`, el maestro manda en marca y descripción homologadas, medida, clasificación base, imagen esperada y demás datos limpios. El archivo externo manda qué productos salen, precios, stock u oferta, orden, solapa de salida, contenedores y cucardas.
+
+El exportador futuro cruzará por `CODIGO`/SKU únicamente las líneas `product`. Los códigos compuestos se resolverán como agrupaciones. `VARIOS` sólo podrá exportarse con los valores comerciales del archivo externo en workflows promocionales que lo permitan, sin crear ni exigir un producto maestro artificial; queda bloqueado en `catalog_body`.
+
+El informe mantiene conteos separados por `workflow_type` para `product`, `composite_code`, `grouped_varios`, `invalid_for_catalog_body` y `requires_review`. Los tres primeros describen qué se detectó; los dos últimos expresan la decisión contextual, por lo que un código compuesto de cuerpo puede incrementar tanto `composite_code` como `invalid_for_catalog_body` y `requires_review`.
+
+## Muestras locales
+
+Las muestras reales deben residir en:
+
+```text
+excel basico/formatos_referencia/2026-08-24-interior/
+```
+
+La carpeta y sus XLSX/TXT no se agregan al repositorio, no se copian a `storage/public` y no se modifican durante la auditoría. Un reporte `partial` indica que faltan una o más de las doce muestras esperadas; no es una autorización para sustituirlas con archivos de negocio distintos.
