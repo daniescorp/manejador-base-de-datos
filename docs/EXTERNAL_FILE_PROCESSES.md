@@ -18,7 +18,9 @@ Entradas equivalentes como `3699`, `3.699`, `$3.699`, `$ 3.699`, `3699,00` y `3.
 
 Los centavos reales nunca se redondean silenciosamente. Por ejemplo, `1699,50` devuelve un resultado `requires_review`, sin valor formateado exportable y con un warning explícito. Un valor inválido recibe el mismo tratamiento seguro.
 
-`ExternalPriceFormatter` es un servicio puro: no consulta ni modifica la base y no conoce `master_products` ni `product_change_logs`. La integración con importadores o exportadores futuros debe consumir su resultado estructurado y bloquear o reportar cualquier precio con `requires_review = true`.
+`ExternalPriceFormatter` es un servicio puro: no consulta ni modifica la base y no conoce `master_products` ni `product_change_logs`. `IndesignTxtExportService` ya consume su resultado para `PRECIOLISTA`, `PRECIOOFERTA` y `PRECIOTACHADO`: acepta un mapa externo opcional por `CODIGO`, deja vacíos los precios ausentes y devuelve warnings estructurados para cualquier precio con `requires_review = true`. Un precio en revisión no produce valor exportable en su columna.
+
+Mientras no exista un importador que entregue ese mapa externo, el comando conserva `prices_source = external_pending` y genera las tres columnas vacías. Cuando se proporcionan precios al servicio, informa `prices_source = external_provided`; los precios nunca se leen ni persisten en `master_products`.
 
 ## Relación con workflows y líneas especiales
 

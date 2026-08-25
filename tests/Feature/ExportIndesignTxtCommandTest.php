@@ -91,6 +91,9 @@ class ExportIndesignTxtCommandTest extends TestCase
         $this->assertSame('tab', $result['delimiter']);
         $this->assertSame(15, $result['columns']);
         $this->assertSame('external_pending', $result['prices_source']);
+        $this->assertFalse($result['price_requires_review']);
+        $this->assertSame(0, $result['price_review_count']);
+        $this->assertSame([], $result['price_warnings']);
         $this->assertSame(1, $result['skipped_missing_measure']);
         $this->assertSame(['MISSING-MEASURE'], $result['skipped_missing_measure_codes']);
         $this->assertSame(0, $result['exported_measure_exceptions']);
@@ -132,6 +135,9 @@ class ExportIndesignTxtCommandTest extends TestCase
         $this->assertSame('', $productColumns[7]);
         $this->assertSame('', $productColumns[9]);
         $this->assertSame('', $productColumns[10]);
+        $this->assertSame('external_pending', $result['prices_source']);
+        $this->assertFalse($result['price_requires_review']);
+        $this->assertSame([], $result['price_warnings']);
         $this->assertStringNotContainsString('No exportar', File::get($path));
         $this->assertSame($masterCount, MasterProduct::query()->count());
         $this->assertSame($logCount, ProductChangeLog::query()->count());

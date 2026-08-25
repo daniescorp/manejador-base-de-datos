@@ -99,8 +99,72 @@ class IndesignTxtExportServiceTest extends TestCase
         $this->assertSame(['EXCLUDED-NO-MEASURE'], $export['skipped_missing_measure_codes']);
         $this->assertSame(0, $export['exported_measure_exceptions']);
         $this->assertSame([], $export['exported_measure_exception_codes']);
+        $this->assertSame('external_pending', $export['prices_source']);
+        $this->assertFalse($export['price_requires_review']);
+        $this->assertSame(0, $export['price_review_count']);
+        $this->assertSame([], $export['price_warnings']);
         $this->assertSame($masterCount, MasterProduct::query()->count());
         $this->assertSame($logCount, ProductChangeLog::query()->count());
+    }
+
+    public function test_it_formats_external_prices_in_the_three_indesign_columns(): void
+    {
+        $this->createProduct(['codigo_producto' => '30385']);
+
+        $export = $this->service()->generate(externalPrices: [
+            '30385' => [
+                'precio_lista' => 3699,
+                'PRECIOOFERTA' => '3.699',
+                'precio_tachado' => '$3.699',
+            ],
+        ]);
+        $columns = explode("\t", $export['lines'][1]);
+
+        $this->assertCount(15, $columns);
+        $this->assertSame('$ 3.699', $columns[7]);
+        $this->assertSame('$ 3.699', $columns[9]);
+        $this->assertSame('$ 3.699', $columns[10]);
+        $this->assertSame('external_provided', $export['prices_source']);
+        $this->assertFalse($export['price_requires_review']);
+        $this->assertSame([], $export['price_warnings']);
+    }
+
+    public function test_it_accepts_zero_decimal_prices_and_keeps_empty_prices_empty(): void
+    {
+        $prices = $this->service()->formatExternalPrices([
+            'PRECIOLISTA' => '3.699,00',
+            'precio_oferta' => '',
+            'PRECIOTACHADO' => null,
+        ]);
+
+        $this->assertSame([
+            'precio_lista' => '$ 3.699',
+            'precio_oferta' => '',
+            'precio_tachado' => '',
+        ], $prices['formatted_values']);
+        $this->assertFalse($prices['requires_review']);
+        $this->assertSame([], $prices['warnings']);
+    }
+
+    public function test_it_does_not_export_real_cents_and_reports_price_review(): void
+    {
+        $this->createProduct(['codigo_producto' => '61267']);
+
+        $export = $this->service()->generate(externalPrices: [
+            ['CODIGO' => '61267', 'PRECIOLISTA' => '1699,50'],
+        ]);
+        $columns = explode("\t", $export['lines'][1]);
+        $warning = $export['price_warnings'][0];
+
+        $this->assertSame('', $columns[7]);
+        $this->assertTrue($export['price_requires_review']);
+        $this->assertSame(1, $export['price_review_count']);
+        $this->assertSame('61267', $warning['code']);
+        $this->assertSame('PRECIOLISTA', $warning['field']);
+        $this->assertSame('1699,50', $warning['original_value']);
+        $this->assertSame('requires_review', $warning['status']);
+        $this->assertTrue($warning['requires_review']);
+        $this->assertStringContainsString('centavos', $warning['warning']);
     }
 
     public function test_it_orders_by_brand_description_and_code_and_applies_a_limit(): void
