@@ -111,6 +111,12 @@ El resultado incluye `price_map`, `warnings`, `requires_review`, `blocked_count`
 
 Las filas `data` pueden pasarse sin adaptadores adicionales a `ExternalPriceMapBuilder`. La cadena prevista es lectura, clasificación, mapa de precios, diagnóstico, vista previa y exportación condicionada a la ausencia de bloqueos.
 
+## Integración con el comando de exportación
+
+`app:export-indesign-txt` acepta `--prices-file=...`. Cuando se proporciona, lee el XLSX/TXT, construye el mapa por código y lo entrega al exportador sin persistirlo. El JSON reporta `price_file`, `price_reader_metadata`, `price_map_count`, `price_warnings`, `price_review_count`, `price_blocked_count` y `price_requires_review`.
+
+Sin la opción continúa `external_pending`, con precios vacíos. Con la opción se informa `external_file`. Un dry-run no se interrumpe por warnings y sirve como diagnóstico; una ejecución real con bloqueos aborta antes de escribir el TXT y devuelve `price_file_has_blocking_warnings`. La futura UI deberá permitir corregir o resolver esos diagnósticos antes de reintentar.
+
 El informe mantiene conteos separados por `workflow_type` para `product`, `composite_code`, `incomplete_composite_code`, `grouped_varios`, `invalid_for_catalog_body` y `requires_review`. Los tipos de línea describen qué se detectó; los estados expresan la decisión contextual, por lo que un código compuesto de cuerpo puede incrementar tanto su tipo como `invalid_for_catalog_body` y `requires_review`.
 
 ## Muestras locales

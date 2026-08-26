@@ -42,6 +42,18 @@ Para XLSX utiliza PhpSpreadsheet y la detección de bloques del auditor. Sólo l
 
 El flujo futuro es: recibir archivo, leer filas, clasificar códigos/secciones, construir `price_map`, diagnosticar warnings, previsualizar y exportar solamente cuando no existan bloqueos.
 
+### Exportación con `--prices-file`
+
+El comando real acepta una fuente externa opcional:
+
+```shell
+php artisan app:export-indesign-txt --prices-file="ruta/al/archivo.txt" --dry-run --json
+```
+
+La cadena ejecutada es archivo externo → `ExternalRowsReader` → `ExternalPriceMapBuilder` → `price_map` → `IndesignTxtExportService`. Sin `--prices-file`, el comportamiento se conserva: `prices_source = external_pending` y las tres columnas quedan vacías. Con archivo, el resultado informa `prices_source = external_file`, ruta, metadata, cantidad mapeada, warnings, revisiones y bloqueos; los precios no se guardan en `master_products`.
+
+El dry-run siempre devuelve la vista previa y todos los diagnósticos. En una exportación real, `price_blocked_count > 0` produce `status = blocked`, `reason = price_file_has_blocking_warnings` y no crea el TXT. Entre los casos bloqueantes están `incomplete_composite_code`, `duplicate_price_code` y cualquier warning de precio que alcance severidad `blocked`.
+
 ## Relación con workflows y líneas especiales
 
 - En `catalog_body`, cada línea exportable debe ser `product`; `VARIOS`, `composite_code` e `incomplete_composite_code` requieren revisión, reciben `invalid_for_catalog_body` y no se exportan automáticamente.
