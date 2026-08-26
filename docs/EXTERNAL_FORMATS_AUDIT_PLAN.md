@@ -117,6 +117,14 @@ Las filas `data` pueden pasarse sin adaptadores adicionales a `ExternalPriceMapB
 
 Sin la opción continúa `external_pending`, con precios vacíos. Con la opción se informa `external_file`. Un dry-run no se interrumpe por warnings y sirve como diagnóstico; una ejecución real con bloqueos aborta antes de escribir el TXT y devuelve `price_file_has_blocking_warnings`. La futura UI deberá permitir corregir o resolver esos diagnósticos antes de reintentar.
 
+## Comando de diagnóstico por archivo
+
+`app:diagnose-external-export` materializa la etapa read-only previa a la exportación. Recibe `--file`, `--workflow` y `--json`, lee sólo el XLSX/TXT indicado y devuelve `ok`, `review_required` o `blocked`. No crea reportes en disco, no genera el TXT de InDesign y no accede a `master_products`, `product_change_logs` ni otras tablas.
+
+El JSON expone `workflow_type`, archivo, formato, delimitador, encoding, columnas, filas, cantidad de precios mapeados, warnings y los conteos de revisión/bloqueo. El resumen separa productos normales, `VARIOS`, códigos compuestos completos e incompletos, secciones duplicadas y warnings de precio que requieren revisión. Sólo `status = ok` produce `can_export_automatically = true`; la decisión todavía no inicia ninguna exportación.
+
+El comando sirve como contrato para una futura UI de diagnóstico, pero este bloque no presenta ni persiste decisiones. Las secciones duplicadas siguen requiriendo selección manual, los compuestos completos una decisión explícita y un código incompleto como `60157 -` permanece bloqueado hasta corregir el archivo comercial.
+
 El informe mantiene conteos separados por `workflow_type` para `product`, `composite_code`, `incomplete_composite_code`, `grouped_varios`, `invalid_for_catalog_body` y `requires_review`. Los tipos de línea describen qué se detectó; los estados expresan la decisión contextual, por lo que un código compuesto de cuerpo puede incrementar tanto su tipo como `invalid_for_catalog_body` y `requires_review`.
 
 ## Muestras locales

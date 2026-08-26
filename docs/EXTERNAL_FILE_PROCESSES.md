@@ -54,6 +54,19 @@ La cadena ejecutada es archivo externo → `ExternalRowsReader` → `ExternalPri
 
 El dry-run siempre devuelve la vista previa y todos los diagnósticos. En una exportación real, `price_blocked_count > 0` produce `status = blocked`, `reason = price_file_has_blocking_warnings` y no crea el TXT. Entre los casos bloqueantes están `incomplete_composite_code`, `duplicate_price_code` y cualquier warning de precio que alcance severidad `blocked`.
 
+### Diagnóstico previo read-only
+
+Antes de exportar, un archivo individual puede diagnosticarse sin consultar la base ni generar un TXT final:
+
+```shell
+php artisan app:diagnose-external-export --file="ruta/al/archivo.txt" --workflow=promo_tapa --json
+php artisan app:diagnose-external-export --file="ruta/al/archivo.txt" --workflow=catalog_body --json
+```
+
+`--file` es obligatorio. `--workflow` acepta `promo_tapa` o `catalog_body`; si se omite, el lector intenta inferirlo por el nombre comercial conocido. El comando compone `ExternalRowsReader` y `ExternalPriceMapBuilder` cuando detecta columnas de precio. No usa modelos, no persiste el mapa, no modifica el archivo recibido y no invoca `IndesignTxtExportService`.
+
+La salida informa metadata de lectura, cantidad de filas y columnas, precios mapeados, warnings, revisiones, bloqueos y un resumen por tipo de línea. `status = ok` habilita `can_export_automatically`; cualquier warning revisable produce `review_required`, y al menos un warning `blocked` produce `blocked`. `review_count` cuenta warnings con severidad `review`, mientras `blocked_count` cuenta exclusivamente los bloqueantes.
+
 ## Relación con workflows y líneas especiales
 
 - En `catalog_body`, cada línea exportable debe ser `product`; `VARIOS`, `composite_code` e `incomplete_composite_code` requieren revisión, reciben `invalid_for_catalog_body` y no se exportan automáticamente.
