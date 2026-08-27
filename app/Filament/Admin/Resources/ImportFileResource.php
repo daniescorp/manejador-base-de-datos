@@ -19,11 +19,11 @@ class ImportFileResource extends Resource
 {
     protected static ?string $model = ImportFile::class;
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Base de Datos';
 
     protected static ?string $navigationLabel = 'Archivos Importados';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 40;
 
     protected static ?string $modelLabel = 'archivo importado';
 

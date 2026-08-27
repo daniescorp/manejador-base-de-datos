@@ -73,8 +73,8 @@ class NormalizationRuleResourceTest extends TestCase
             ->assertSuccessful()
             ->assertCanSeeTableRecords([$rule]);
 
-        $this->assertSame('Diccionario de Normalización', NormalizationRuleResource::getNavigationLabel());
-        $this->assertSame('Manejador de Datos', NormalizationRuleResource::getNavigationGroup());
+        $this->assertSame('Reglas de Normalización', NormalizationRuleResource::getNavigationLabel());
+        $this->assertSame('Diccionario', NormalizationRuleResource::getNavigationGroup());
     }
 
     public function test_it_creates_a_description_normalization_rule(): void

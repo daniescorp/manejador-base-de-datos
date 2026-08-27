@@ -69,6 +69,7 @@ class ExternalExportDiagnosisService
             'review_count' => $reviewCount,
             'blocked_count' => $blockedCount,
             'can_export_automatically' => $status === 'ok',
+            'price_map' => $priceBuild['price_map'],
             'warnings' => array_map(
                 static fn (array $warning): array => [
                     'issue' => $warning['issue'] ?? null,
@@ -80,8 +81,57 @@ class ExternalExportDiagnosisService
                 ],
                 $warnings,
             ),
+            'preview_rows' => $this->previewRows(
+                $readResult['rows'] ?? [],
+                $warnings,
+                $priceBuild['price_map'],
+            ),
             'summary' => $summary,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rowEnvelopes
+     * @param  list<array<string, mixed>>  $warnings
+     * @param  array<string, array<string, string>>  $priceMap
+     * @return list<array<string, mixed>>
+     */
+    private function previewRows(array $rowEnvelopes, array $warnings, array $priceMap): array
+    {
+        return array_values(array_map(
+            static function (array $envelope, int $index) use ($warnings, $priceMap): array {
+                $data = $envelope['data'] ?? [];
+                $code = trim((string) ($data['CODIGO'] ?? $data['SKU'] ?? ''));
+                $sourceRowNumber = $envelope['row_number'] ?? ($index + 1);
+                $rowWarnings = array_values(array_filter(
+                    $warnings,
+                    static fn (array $warning): bool => in_array(
+                        $warning['row_number'] ?? null,
+                        [$index + 1, $sourceRowNumber],
+                        true,
+                    )
+                        || (($warning['code'] ?? null) !== null && (string) $warning['code'] === $code),
+                ));
+                $isBlocked = count(array_filter(
+                    $rowWarnings,
+                    static fn (array $warning): bool => ($warning['severity'] ?? null) === 'blocked',
+                )) > 0;
+                $prices = $priceMap[$code] ?? [];
+
+                return [
+                    'row_number' => $sourceRowNumber,
+                    'code' => $code,
+                    'brand' => (string) ($data['MARCA'] ?? ''),
+                    'description' => (string) ($data['DESCRIPCION'] ?? ''),
+                    'price_list' => (string) ($prices['precio_lista'] ?? $data['PRECIOLISTA'] ?? ''),
+                    'price_offer' => (string) ($prices['precio_oferta'] ?? $data['PRECIOOFERTA'] ?? ''),
+                    'price_strikethrough' => (string) ($prices['precio_tachado'] ?? $data['PRECIOTACHADO'] ?? ''),
+                    'status' => $isBlocked ? 'blocked' : ($rowWarnings !== [] ? 'review_required' : 'ok'),
+                ];
+            },
+            array_slice($rowEnvelopes, 0, 20),
+            array_keys(array_slice($rowEnvelopes, 0, 20)),
+        ));
     }
 
     private function validateWorkflow(string $workflow): void

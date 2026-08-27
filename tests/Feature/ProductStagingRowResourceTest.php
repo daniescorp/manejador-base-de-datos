@@ -80,7 +80,7 @@ class ProductStagingRowResourceTest extends TestCase
             'Revisión de Productos Importados',
             ProductStagingRowResource::getNavigationLabel(),
         );
-        $this->assertSame('Manejador de Datos', ProductStagingRowResource::getNavigationGroup());
+        $this->assertSame('Base de Datos', ProductStagingRowResource::getNavigationGroup());
     }
 
     public function test_global_search_includes_all_requested_original_fields(): void

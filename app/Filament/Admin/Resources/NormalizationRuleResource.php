@@ -58,11 +58,11 @@ class NormalizationRuleResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedLanguage;
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Diccionario';
 
-    protected static ?string $navigationLabel = 'Diccionario de Normalización';
+    protected static ?string $navigationLabel = 'Reglas de Normalización';
 
-    protected static ?int $navigationSort = 7;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'Regla de Normalización';
 

@@ -127,6 +127,16 @@ class DiagnoseExternalExportCommandTest extends TestCase
         $this->assertSame(0, $result['blocked_count']);
         $this->assertTrue($result['can_export_automatically']);
         $this->assertSame(1, $result['summary']['product_count']);
+        $this->assertSame([
+            'precio_lista' => '$ 3.699',
+            'precio_oferta' => '',
+            'precio_tachado' => '',
+        ], $result['price_map']['30385']);
+        $this->assertSame('30385', $result['preview_rows'][0]['code']);
+        $this->assertSame('GALLO', $result['preview_rows'][0]['brand']);
+        $this->assertSame('Arroz', $result['preview_rows'][0]['description']);
+        $this->assertSame('$ 3.699', $result['preview_rows'][0]['price_list']);
+        $this->assertSame('ok', $result['preview_rows'][0]['status']);
     }
 
     public function test_diagnosis_does_not_require_database_or_generate_export_txt(): void

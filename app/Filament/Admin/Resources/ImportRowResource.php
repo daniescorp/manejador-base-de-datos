@@ -21,11 +21,11 @@ class ImportRowResource extends Resource
 {
     protected static ?string $model = ImportRow::class;
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Base de Datos';
 
     protected static ?string $navigationLabel = 'Filas Importadas';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 50;
 
     protected static ?string $modelLabel = 'fila importada';
 

@@ -20,11 +20,11 @@ class ImportBatchResource extends Resource
 {
     protected static ?string $model = ImportBatch::class;
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Base de Datos';
 
     protected static ?string $navigationLabel = 'Lotes de Importación';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $modelLabel = 'lote de importación';
 

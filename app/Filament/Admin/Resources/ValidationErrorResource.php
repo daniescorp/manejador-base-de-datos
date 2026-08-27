@@ -21,11 +21,11 @@ class ValidationErrorResource extends Resource
 {
     protected static ?string $model = ValidationError::class;
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Manejador de Datos';
+    protected static string | \UnitEnum | null $navigationGroup = 'Base de Datos';
 
     protected static ?string $navigationLabel = 'Errores de Validación';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 60;
 
     protected static ?string $modelLabel = 'error de validación';
 

@@ -2,12 +2,15 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Admin\Pages\Dashboard;
+use App\Filament\Admin\Resources\NormalizationRuleResource;
 use App\Http\Controllers\ProductImageController;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
+use Filament\Navigation\NavigationGroup;
+use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -59,6 +62,19 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Admin/Pages'), for: 'App\Filament\Admin\Pages')
             ->pages([
                 Dashboard::class,
+            ])
+            ->navigationGroups([
+                NavigationGroup::make('Base de Datos'),
+                NavigationGroup::make('Procesos de Catálogo'),
+                NavigationGroup::make('Procesos de Promociones'),
+                NavigationGroup::make('Diccionario'),
+            ])
+            ->navigationItems([
+                NavigationItem::make('Crear Regla')
+                    ->group('Diccionario')
+                    ->icon('heroicon-o-plus-circle')
+                    ->sort(20)
+                    ->url(fn (): string => NormalizationRuleResource::getUrl('create')),
             ])
             ->discoverWidgets(in: app_path('Filament/Admin/Widgets'), for: 'App\Filament\Admin\Widgets')
             ->widgets([

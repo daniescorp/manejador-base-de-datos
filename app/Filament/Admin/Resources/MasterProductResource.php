@@ -39,11 +39,11 @@ class MasterProductResource extends Resource
 
     protected static ?string $model = MasterProduct::class;
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Base de Datos';
 
     protected static ?string $navigationLabel = 'Productos Maestros';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'producto maestro';
 

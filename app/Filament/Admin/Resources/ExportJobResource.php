@@ -20,11 +20,7 @@ class ExportJobResource extends Resource
 {
     protected static ?string $model = ExportJob::class;
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
-
-    protected static ?string $navigationLabel = 'Exportaciones';
-
-    protected static ?int $navigationSort = 6;
+    protected static bool $shouldRegisterNavigation = false;
 
     protected static ?string $modelLabel = 'exportación';
 

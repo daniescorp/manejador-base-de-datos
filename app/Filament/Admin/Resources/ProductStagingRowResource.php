@@ -80,11 +80,11 @@ class ProductStagingRowResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Manejador de Datos';
+    protected static string|\UnitEnum|null $navigationGroup = 'Base de Datos';
 
     protected static ?string $navigationLabel = 'Revisión de Productos Importados';
 
-    protected static ?int $navigationSort = 8;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $modelLabel = 'Producto Importado';
 
