@@ -29,12 +29,31 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->brandName('Gestor de Exportación para Marketing')
+            ->brandLogo(asset('brand/logo_luvik.svg'))
+            ->brandLogoHeight('2.75rem')
+            ->darkMode(false)
+            ->viteTheme('resources/css/filament/admin/theme.css')
             ->authenticatedRoutes(function (): void {
                 Route::get('/product-images/{code}', ProductImageController::class)
                     ->name('product-images.show');
             })
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => [
+                    50 => '#f5fcfd',
+                    100 => '#b3ecf2',
+                    200 => '#9ad2d9',
+                    300 => '#35658a',
+                    400 => '#003455',
+                    500 => '#003455',
+                    600 => '#003455',
+                    700 => '#002d4a',
+                    800 => '#00263d',
+                    900 => '#001e31',
+                    950 => '#00151f',
+                ],
+                'danger' => Color::hex('#b21828'),
+                'info' => Color::hex('#35658a'),
             ])
             ->discoverResources(in: app_path('Filament/Admin/Resources'), for: 'App\Filament\Admin\Resources')
             ->discoverPages(in: app_path('Filament/Admin/Pages'), for: 'App\Filament\Admin\Pages')

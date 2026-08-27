@@ -1,0 +1,12 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/Admin/**/*';
+@source '../../../../resources/views/filament/admin/**/*';
+
+.fi-body {
+    background-color: #ffffff;
+}
+
+.fi-btn.fi-color-primary {
+    color: #ffffff;
+}
