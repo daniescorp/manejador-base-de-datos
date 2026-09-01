@@ -46,6 +46,21 @@
 
         {{ $this->uploadForm }}
 
+        @if ($uploadedFileInfo)
+            <div class="diagnosis-empty-workflow" aria-live="polite">
+                <x-filament::icon icon="heroicon-o-document-check" aria-hidden="true" />
+                <div>
+                    <h2>Archivo listo para diagnosticar</h2>
+                    <p>
+                        <strong>{{ $uploadedFileInfo['name'] }}</strong>
+                        · {{ $uploadedFileInfo['extension'] === 'xlsx' ? 'Excel/XLSX' : mb_strtoupper($uploadedFileInfo['extension'], 'UTF-8') }}
+                        · {{ $this->displayFileSize($uploadedFileInfo['size']) }}
+                        · Workflow: {{ $this->workflowType() }}
+                    </p>
+                </div>
+            </div>
+        @endif
+
         @if ($diagnosisError)
             <div class="diagnosis-alert diagnosis-alert-blocked" role="alert">
                 <x-filament::icon icon="heroicon-o-exclamation-triangle" aria-hidden="true" />
@@ -63,7 +78,23 @@
                 <div>
                     <p class="process-home-eyebrow">Paso 3</p>
                     <h2 id="diagnosis-summary-heading">Resumen del diagnóstico</h2>
-                    <p>{{ $diagnosis['source_file'] }} · {{ $diagnosis['workflow_type'] }}</p>
+                    <p>
+                        {{ $diagnosis['source_file'] }}
+                        · {{ ($diagnosis['format'] ?? null) === 'xlsx' ? 'Excel/XLSX' : mb_strtoupper($diagnosis['format'] ?? '', 'UTF-8') }}
+                        @if (isset($diagnosis['source_size']))
+                            · {{ $this->displayFileSize($diagnosis['source_size']) }}
+                        @endif
+                        · Workflow: {{ $diagnosis['workflow_type'] }}
+                    </p>
+                    @if (($diagnosis['sheets_read'] ?? []) !== [])
+                        <p>
+                            {{ ($diagnosis['sheet_count'] ?? 1) === 1 ? 'Hoja detectada' : 'Hojas detectadas' }}:
+                            {{ implode(', ', $diagnosis['sheets_read']) }}.
+                            @if (($diagnosis['ignored_secondary_block_count'] ?? 0) > 0)
+                                {{ $diagnosis['ignored_secondary_block_count'] }} bloque(s) secundario(s) ignorado(s).
+                            @endif
+                        </p>
+                    @endif
                 </div>
             </div>
 
@@ -169,6 +200,7 @@
                             <th>CÓDIGO</th>
                             <th>MARCA</th>
                             <th>DESCRIPCIÓN</th>
+                            <th>UXB</th>
                             <th>PRECIOLISTA</th>
                             <th>PRECIOOFERTA</th>
                             <th>PRECIOTACHADO</th>
@@ -181,6 +213,7 @@
                                 <td><strong>{{ $this->displayDiagnosticValue($row['code'] ?? null) }}</strong></td>
                                 <td>{{ $this->displayDiagnosticValue($row['brand'] ?? null) }}</td>
                                 <td>{{ $this->displayDiagnosticValue($row['description'] ?? null) }}</td>
+                                <td>{{ $this->displayDiagnosticValue($row['units_per_box'] ?? null) }}</td>
                                 <td>{{ $this->displayDiagnosticValue($row['price_list'] ?? null) }}</td>
                                 <td>{{ $this->displayDiagnosticValue($row['price_offer'] ?? null) }}</td>
                                 <td>{{ $this->displayDiagnosticValue($row['price_strikethrough'] ?? null) }}</td>
@@ -198,11 +231,14 @@
                                             default => '—',
                                         } }}
                                     </span>
+                                    @if (($row['issues'] ?? []) !== [])
+                                        <div>{{ implode(', ', array_map(fn (string $issue): string => $this->displayDiagnosticText($issue), $row['issues'])) }}</div>
+                                    @endif
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7">No hay filas para previsualizar.</td>
+                                <td colspan="8">No hay filas para previsualizar.</td>
                             </tr>
                         @endforelse
                     </tbody>

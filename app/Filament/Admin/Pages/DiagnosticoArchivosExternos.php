@@ -51,6 +51,10 @@ class DiagnosticoArchivosExternos extends Page
 
     public bool $fileWasUploaded = false;
 
+    /** @var array{name: string, extension: string, size: int|null} | null */
+    #[Locked]
+    public ?array $uploadedFileInfo = null;
+
     public function mount(): void
     {
         $this->form->fill();
@@ -68,10 +72,19 @@ class DiagnosticoArchivosExternos extends Page
                         'text/plain',
                         'text/tab-separated-values',
                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'application/vnd.ms-excel',
                     ])
                     ->storeFiles(false)
                     ->afterStateUpdated(function (mixed $state): void {
-                        $this->fileWasUploaded = filled(Arr::wrap($state));
+                        $uploadedFile = Arr::first(Arr::wrap($state));
+                        $this->fileWasUploaded = $uploadedFile instanceof TemporaryUploadedFile;
+                        $this->uploadedFileInfo = $uploadedFile instanceof TemporaryUploadedFile
+                            ? [
+                                'name' => $uploadedFile->getClientOriginalName(),
+                                'extension' => mb_strtolower($uploadedFile->getClientOriginalExtension(), 'UTF-8'),
+                                'size' => $uploadedFile->getSize() ?: null,
+                            ]
+                            : null;
                     })
                     ->maxSize(25 * 1024)
                     ->required()
@@ -155,6 +168,12 @@ class DiagnosticoArchivosExternos extends Page
 
             $extension = mb_strtolower($uploadedFile->getClientOriginalExtension(), 'UTF-8');
 
+            if ($extension === 'xls') {
+                throw new \InvalidArgumentException(
+                    'Por ahora se admiten archivos .xlsx y .txt. Convertí el archivo .xls a .xlsx antes de cargarlo.',
+                );
+            }
+
             if (! in_array($extension, ['txt', 'xlsx'], true)) {
                 throw new \InvalidArgumentException('El archivo debe tener extensión TXT o XLSX.');
             }
@@ -168,8 +187,22 @@ class DiagnosticoArchivosExternos extends Page
                 throw new \RuntimeException('No se pudo conservar el archivo temporal para exportarlo.');
             }
 
-            $this->diagnosis = $diagnosisService->diagnose($sourcePath, $workflow);
+            try {
+                $this->diagnosis = $diagnosisService->diagnose($sourcePath, $workflow);
+            } catch (Throwable $exception) {
+                if ($extension === 'xlsx') {
+                    throw new \InvalidArgumentException(
+                        'No se pudo reconocer la estructura del Excel. Verifique encabezados y formato.',
+                        previous: $exception,
+                    );
+                }
+
+                throw $exception;
+            }
+
             $this->diagnosis['source_file'] = $uploadedFile->getClientOriginalName();
+            $this->diagnosis['source_extension'] = $extension;
+            $this->diagnosis['source_size'] = $uploadedFile->getSize() ?: null;
 
             if (($this->diagnosis['status'] ?? null) !== 'ok') {
                 $this->deleteTemporarySource();
@@ -198,6 +231,7 @@ class DiagnosticoArchivosExternos extends Page
         } finally {
             $uploadedFile->delete();
             $this->fileWasUploaded = false;
+            $this->uploadedFileInfo = null;
             $this->form->fill();
         }
     }
@@ -214,6 +248,7 @@ class DiagnosticoArchivosExternos extends Page
         $this->diagnosis = null;
         $this->diagnosisError = null;
         $this->fileWasUploaded = false;
+        $this->uploadedFileInfo = null;
         $this->resetValidation();
         $this->form->fill();
     }
@@ -273,6 +308,11 @@ class DiagnosticoArchivosExternos extends Page
     protected function workflow(): string
     {
         return 'catalog_body';
+    }
+
+    public function workflowType(): string
+    {
+        return $this->workflow();
     }
 
     public function workflowLabel(): string
@@ -351,6 +391,7 @@ class DiagnosticoArchivosExternos extends Page
         $message = 'El archivo temporal no está disponible. Vuelva a subirlo.';
         $this->diagnosisError = $message;
         $this->fileWasUploaded = false;
+        $this->uploadedFileInfo = null;
         $this->addError('data.file', $message);
 
         Notification::make()
@@ -382,5 +423,16 @@ class DiagnosticoArchivosExternos extends Page
         }
 
         return ucfirst(str_replace('_', ' ', $value));
+    }
+
+    public function displayFileSize(?int $bytes): string
+    {
+        if ($bytes === null) {
+            return 'Tamaño no disponible';
+        }
+
+        return $bytes >= 1024 * 1024
+            ? number_format($bytes / (1024 * 1024), 2, ',', '.').' MB'
+            : number_format(max(1, $bytes / 1024), 1, ',', '.').' KB';
     }
 }

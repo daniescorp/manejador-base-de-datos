@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Log;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\Livewire;
 use Mockery\MockInterface;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -73,6 +75,7 @@ class ExternalDiagnosisPageTest extends TestCase
                         'text/plain',
                         'text/tab-separated-values',
                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'application/vnd.ms-excel',
                     ];
             })
             ->assertFormFieldDoesNotExist('workflow')
@@ -85,6 +88,86 @@ class ExternalDiagnosisPageTest extends TestCase
             ->assertSee('Arrastrá y soltá tu archivo o hacé clic para seleccionarlo')
             ->assertSee('Diagnosticar catálogo')
             ->assertDontSee('Workflow');
+    }
+
+    public function test_selecting_an_xlsx_shows_the_file_ready_to_diagnose(): void
+    {
+        Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => $this->syntheticWorkbookUpload()])
+            ->assertSet('fileWasUploaded', true)
+            ->assertSet('uploadedFileInfo.name', 'catalogo-sintetico.xlsx')
+            ->assertSet('uploadedFileInfo.extension', 'xlsx')
+            ->assertSee('Archivo listo para diagnosticar')
+            ->assertSee('catalogo-sintetico.xlsx')
+            ->assertSee('Excel/XLSX')
+            ->assertSee('Workflow: catalog_body');
+    }
+
+    public function test_a_valid_xlsx_is_diagnosed_with_preview_and_visible_prices(): void
+    {
+        $component = Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => $this->syntheticWorkbookUpload()])
+            ->call('diagnose')
+            ->assertHasNoFormErrors()
+            ->assertSet('diagnosis.format', 'xlsx')
+            ->assertSet('diagnosis.rows_count', 2)
+            ->assertSet('diagnosis.sheets_read.0', 'CATALOGO')
+            ->assertSet('diagnosis.preview_rows.0.units_per_box', '6')
+            ->assertSet('diagnosis.preview_rows.0.price_list', '$ 1.994')
+            ->assertSet('diagnosis.preview_rows.1.price_offer', '$ 4.006')
+            ->assertSee('Previsualización')
+            ->assertSee('UXB')
+            ->assertSee('$ 1.994')
+            ->assertSee('$ 4.006')
+            ->assertDontSee('1993.85996851799996')
+            ->assertDontSee('4005.846');
+
+        $component->call('clearDiagnosis');
+    }
+
+    public function test_an_xlsx_without_a_recognizable_structure_shows_a_controlled_error(): void
+    {
+        Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => $this->syntheticWorkbookUpload(validStructure: false)])
+            ->call('diagnose')
+            ->assertSet('diagnosis', null)
+            ->assertSet(
+                'diagnosisError',
+                'No se pudo reconocer la estructura del Excel. Verifique encabezados y formato.',
+            )
+            ->assertSee('No se pudo reconocer la estructura del Excel. Verifique encabezados y formato.');
+    }
+
+    public function test_an_unsupported_xls_shows_conversion_guidance_without_breaking_the_page(): void
+    {
+        Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => UploadedFile::fake()
+                ->createWithContent('catalogo-legado.xls', 'contenido sintetico')
+                ->mimeType('application/vnd.ms-excel')])
+            ->call('diagnose')
+            ->assertSet('diagnosis', null)
+            ->assertSet(
+                'diagnosisError',
+                'Por ahora se admiten archivos .xlsx y .txt. Convertí el archivo .xls a .xlsx antes de cargarlo.',
+            )
+            ->assertSee('Convertí el archivo .xls a .xlsx antes de cargarlo.');
+    }
+
+    public function test_a_txt_still_uses_the_existing_diagnosis_flow(): void
+    {
+        $component = Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => UploadedFile::fake()->createWithContent(
+                'catalogo-sintetico.txt',
+                "CODIGO\tMARCA\tDESCRIPCION\tUXB\tPRECIOLISTA\n10001\tMARCA\tProducto\t12\t1994",
+            )])
+            ->call('diagnose')
+            ->assertHasNoFormErrors()
+            ->assertSet('diagnosis.format', 'txt')
+            ->assertSet('diagnosis.rows_count', 1)
+            ->assertSet('diagnosis.preview_rows.0.units_per_box', '12')
+            ->assertSet('diagnosis.preview_rows.0.price_list', '$ 1.994');
+
+        $component->call('clearDiagnosis');
     }
 
     public function test_diagnosis_requires_an_uploaded_file(): void
@@ -371,5 +454,41 @@ class ExternalDiagnosisPageTest extends TestCase
                 'product_count' => 0,
             ],
         ];
+    }
+
+    private function syntheticWorkbookUpload(bool $validStructure = true): UploadedFile
+    {
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('CATALOGO');
+        $sheet->fromArray($validStructure ? [
+            ['CODIGO', 'MARCA', 'DESCRIPCION', 'UXB', 'PRECIOLISTA', 'PRECIOOFERTA', 'PRECIOTACHADO'],
+            ['40463', 'MARCA A', 'Producto uno', 6, '=1993.85996851799996', null, null],
+            ['170156', 'MARCA B', 'Producto dos', 12, null, '=4005.846', null],
+        ] : [
+            ['NOTA', 'VALOR'],
+            ['Total', 2],
+        ]);
+
+        if ($validStructure) {
+            $sheet->getStyle('E2:G3')->getNumberFormat()->setFormatCode('"$ "#,##0');
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'external-diagnosis-xlsx-');
+
+        if ($path === false) {
+            throw new RuntimeException('No fue posible crear el XLSX sintético.');
+        }
+
+        (new Xlsx($spreadsheet))->save($path);
+        $spreadsheet->disconnectWorksheets();
+        $content = file_get_contents($path);
+        unlink($path);
+
+        if ($content === false) {
+            throw new RuntimeException('No fue posible leer el XLSX sintético.');
+        }
+
+        return UploadedFile::fake()->createWithContent('catalogo-sintetico.xlsx', $content);
     }
 }

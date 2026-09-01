@@ -37,6 +37,7 @@ class ExternalExportDiagnosisService
         $workflow = (string) $metadata['workflow_type'];
         $this->validateWorkflow($workflow);
         $rows = $this->rowsReader->rowsForPriceMap($readResult);
+        $this->validateWorkbookStructure($metadata, $rows);
         $hasPriceColumns = $this->hasPriceColumns($rows, $metadata);
         $priceBuild = $hasPriceColumns
             ? $this->priceMapBuilder->build($rows)
@@ -63,6 +64,9 @@ class ExternalExportDiagnosisService
             'delimiter' => $metadata['delimiter'],
             'encoding' => $metadata['encoding'],
             'column_count' => $metadata['column_count'],
+            'sheet_count' => $metadata['sheet_count'] ?? null,
+            'sheets_read' => $metadata['sheets_read'] ?? [],
+            'ignored_secondary_block_count' => $metadata['ignored_secondary_block_count'] ?? 0,
             'rows_count' => count($rows),
             'price_map_count' => count($priceBuild['price_map']),
             'warning_count' => count($warnings),
@@ -123,10 +127,12 @@ class ExternalExportDiagnosisService
                     'code' => $code,
                     'brand' => (string) ($data['MARCA'] ?? ''),
                     'description' => (string) ($data['DESCRIPCION'] ?? ''),
+                    'units_per_box' => (string) ($data['UXB'] ?? ''),
                     'price_list' => (string) ($prices['precio_lista'] ?? $data['PRECIOLISTA'] ?? ''),
                     'price_offer' => (string) ($prices['precio_oferta'] ?? $data['PRECIOOFERTA'] ?? ''),
                     'price_strikethrough' => (string) ($prices['precio_tachado'] ?? $data['PRECIOTACHADO'] ?? ''),
                     'status' => $isBlocked ? 'blocked' : ($rowWarnings !== [] ? 'review_required' : 'ok'),
+                    'issues' => array_values(array_unique(array_filter(array_column($rowWarnings, 'issue')))),
                 ];
             },
             array_slice($rowEnvelopes, 0, 20),
@@ -138,6 +144,30 @@ class ExternalExportDiagnosisService
     {
         if (! in_array($workflow, self::WORKFLOWS, true)) {
             throw new InvalidArgumentException("Workflow no soportado: {$workflow}");
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function validateWorkbookStructure(array $metadata, array $rows): void
+    {
+        if (($metadata['format'] ?? null) !== 'xlsx') {
+            return;
+        }
+
+        $headers = array_map(
+            fn (string $header): string => $this->normalizeField($header),
+            is_array($metadata['headers'] ?? null) ? $metadata['headers'] : [],
+        );
+        $hasCode = array_intersect(['codigo', 'sku'], $headers) !== [];
+        $hasPrice = array_intersect(self::PRICE_FIELDS, $headers) !== [];
+
+        if ($rows === [] || ! $hasCode || ! $hasPrice) {
+            throw new InvalidArgumentException(
+                'No se pudo reconocer la estructura del Excel. Verifique encabezados y formato.',
+            );
         }
     }
 
