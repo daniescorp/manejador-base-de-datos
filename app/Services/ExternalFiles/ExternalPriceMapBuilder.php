@@ -77,27 +77,34 @@ class ExternalPriceMapBuilder
             $formattedPrices = [];
 
             foreach (self::PRICE_FIELDS as $mapField => $externalField) {
-                $originalValue = $normalizedRow[$this->normalizeField($externalField)] ?? null;
-                $formatted = $this->priceFormatter->format($originalValue);
-                $formattedPrices[$mapField] = $formatted['formatted_value'];
+                $priceValues = $this->priceValues($normalizedRow, $externalField);
+                $formattedPrices[$mapField] = '';
 
-                if ($formatted['status'] === 'formatted') {
-                    $formattedCount++;
-                } elseif ($formatted['status'] === 'empty') {
-                    $emptyPriceCount++;
-                }
+                foreach ($priceValues as $occurrence => $originalValue) {
+                    $formatted = $this->priceFormatter->format($originalValue);
 
-                if ($formatted['requires_review']) {
-                    $warnings[] = $this->warning(
-                        $code,
-                        $rowNumber,
-                        $externalField,
-                        $originalValue,
-                        'price_requires_review',
-                        'review',
-                        'review_price_manually',
-                        $formatted['warning'],
-                    );
+                    if ($occurrence === 0) {
+                        $formattedPrices[$mapField] = $formatted['formatted_value'];
+                    }
+
+                    if ($formatted['status'] === 'formatted') {
+                        $formattedCount++;
+                    } elseif ($formatted['status'] === 'empty') {
+                        $emptyPriceCount++;
+                    }
+
+                    if ($formatted['requires_review']) {
+                        $warnings[] = $this->warning(
+                            $code,
+                            $rowNumber,
+                            $externalField,
+                            $originalValue,
+                            'price_requires_review',
+                            'review',
+                            'review_price_manually',
+                            $formatted['warning'],
+                        );
+                    }
                 }
             }
 
@@ -163,6 +170,21 @@ class ExternalPriceMapBuilder
         $field = mb_strtolower(Str::ascii(trim($field)), 'UTF-8');
 
         return preg_replace('/[^a-z0-9]+/u', '', $field) ?? $field;
+    }
+
+    /** @return list<mixed> */
+    private function priceValues(array $normalizedRow, string $externalField): array
+    {
+        $base = $this->normalizeField($externalField);
+        $values = [];
+
+        foreach ($normalizedRow as $field => $value) {
+            if (preg_match('/^'.preg_quote($base, '/').'(?:\d+)?$/', $field) === 1) {
+                $values[] = $value;
+            }
+        }
+
+        return $values === [] ? [null] : $values;
     }
 
     /** @return array<string, mixed> */

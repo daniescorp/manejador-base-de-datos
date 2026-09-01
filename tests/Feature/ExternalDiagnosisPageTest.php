@@ -6,6 +6,7 @@ use App\Filament\Admin\Pages\DiagnosticoArchivosExternos;
 use App\Filament\Admin\Pages\DiagnosticoPromociones;
 use App\Models\User;
 use App\Services\ExternalFiles\ExternalExportDiagnosisService;
+use App\Services\ExternalFiles\ExternalWorkflowExportService;
 use Dotenv\Dotenv;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
@@ -108,14 +109,19 @@ class ExternalDiagnosisPageTest extends TestCase
             "CODIGO\tPRECIOOFERTA\n10001\t529",
         );
 
-        Livewire::test(DiagnosticoArchivosExternos::class)
+        $component = Livewire::test(DiagnosticoArchivosExternos::class)
             ->fillForm(['file' => $upload])
             ->call('diagnose')
             ->assertHasNoFormErrors()
             ->assertSet('diagnosis.workflow_type', 'catalog_body')
-            ->assertSee('Exportar archivo');
+            ->assertSee('Exportar TXT')
+            ->assertSee('El diagnóstico está OK.');
 
         $this->assertNotNull($capturedPath);
+        $this->assertFileExists($capturedPath);
+
+        $component->call('clearDiagnosis');
+
         $this->assertFileDoesNotExist($capturedPath);
     }
 
@@ -149,11 +155,78 @@ class ExternalDiagnosisPageTest extends TestCase
             ->assertSet('diagnosis.blocked_count', 1)
             ->assertSee('La exportación está bloqueada. Corrija los errores críticos antes de exportar.')
             ->assertSee('60157 -')
-            ->assertSee('Exportar archivo');
+            ->assertSee('Exportar TXT')
+            ->call('exportTxt')
+            ->assertNoFileDownloaded();
 
         $this->assertNotNull($capturedPath);
         $this->assertFileDoesNotExist($capturedPath);
         $this->assertSame($exportsBefore, File::glob(storage_path('app/exports/*.txt')) ?: []);
+    }
+
+    public function test_review_required_keeps_export_disabled(): void
+    {
+        $this->mock(ExternalExportDiagnosisService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('diagnose')->once()->andReturn([
+                ...$this->diagnosisFor('catalog_body'),
+                'status' => 'review_required',
+                'warning_count' => 1,
+                'review_count' => 1,
+                'can_export_automatically' => false,
+                'warnings' => [[
+                    'issue' => 'price_requires_review',
+                    'severity' => 'review',
+                    'code' => '10001',
+                    'row_number' => 1,
+                    'original_value' => '699,50',
+                    'recommendation' => 'review_price_manually',
+                ]],
+            ]);
+        });
+        $this->mock(ExternalWorkflowExportService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('export');
+        });
+
+        Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => UploadedFile::fake()->createWithContent(
+                'revision-sintetica.txt',
+                "CODIGO\tPRECIOOFERTA\n10001\t699,50",
+            )])
+            ->call('diagnose')
+            ->assertSet('diagnosis.status', 'review_required')
+            ->assertSee('Hay advertencias que deben revisarse antes de exportar.')
+            ->call('exportTxt')
+            ->assertNoFileDownloaded();
+    }
+
+    public function test_an_ok_diagnosis_downloads_the_generated_catalog_txt(): void
+    {
+        $this->travelTo(now()->setDate(2026, 8, 31)->setTime(14, 30, 45));
+        $this->mock(ExternalExportDiagnosisService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('diagnose')->once()->andReturn($this->diagnosisFor('catalog_body'));
+        });
+        $this->mock(ExternalWorkflowExportService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('export')
+                ->once()
+                ->withArgs(fn (string $path, string $workflow): bool => is_file($path) && $workflow === 'catalog_body')
+                ->andReturn([
+                    'content' => "CODIGO\tPRECIOOFERTA\r\n10001\t$ 529",
+                    'rows' => 1,
+                    'columns' => 2,
+                    'diagnosis' => $this->diagnosisFor('catalog_body'),
+                ]);
+        });
+
+        $component = Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => UploadedFile::fake()->createWithContent(
+                'catalogo-sintetico.txt',
+                "CODIGO\tPRECIOOFERTA\n10001\t529",
+            )])
+            ->call('diagnose')
+            ->call('exportTxt')
+            ->assertFileDownloaded('catalogo-exportado-20260831-143045.txt');
+
+        $component->call('clearDiagnosis');
     }
 
     /** @return array<string, mixed> */

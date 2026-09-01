@@ -232,12 +232,19 @@
                 @elseif ($status === 'review_required')
                     <p>Hay advertencias que deben revisarse antes de exportar.</p>
                 @else
-                    <p>Exportación desde UI pendiente. Use el comando backend por ahora.</p>
+                    <p>El diagnóstico está OK. El TXT se generará sin modificar el archivo original ni guardar datos en la base.</p>
                 @endif
             </div>
 
-            <x-filament::button type="button" icon="heroicon-o-arrow-down-tray" disabled>
-                Exportar archivo
+            <x-filament::button
+                type="button"
+                icon="heroicon-o-arrow-down-tray"
+                wire:click="exportTxt"
+                wire:loading.attr="disabled"
+                wire:target="exportTxt"
+                :disabled="$status !== 'ok'"
+            >
+                Exportar TXT
             </x-filament::button>
         </section>
     @else

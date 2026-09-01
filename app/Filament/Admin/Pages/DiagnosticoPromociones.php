@@ -10,7 +10,7 @@ class DiagnosticoPromociones extends DiagnosticoArchivosExternos
 
     protected static ?string $slug = 'diagnostico-promociones';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Procesos de Promociones';
+    protected static string|\UnitEnum|null $navigationGroup = 'Procesos de Promociones';
 
     protected function workflow(): string
     {
@@ -35,5 +35,10 @@ class DiagnosticoPromociones extends DiagnosticoArchivosExternos
     public function diagnoseButtonLabel(): string
     {
         return 'Diagnosticar promoción';
+    }
+
+    protected function exportFilePrefix(): string
+    {
+        return 'promociones';
     }
 }

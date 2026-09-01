@@ -3,11 +3,15 @@
 namespace App\Filament\Admin\Pages;
 
 use App\Services\ExternalFiles\ExternalExportDiagnosisService;
+use App\Services\ExternalFiles\ExternalWorkflowExportService;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
+use Livewire\Attributes\Locked;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Throwable;
 
@@ -20,7 +24,7 @@ class DiagnosticoArchivosExternos extends Page
 
     protected static ?string $slug = 'diagnostico-archivos-externos';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Procesos de Catálogo';
+    protected static string|\UnitEnum|null $navigationGroup = 'Procesos de Catálogo';
 
     protected static ?int $navigationSort = 10;
 
@@ -33,6 +37,9 @@ class DiagnosticoArchivosExternos extends Page
     public ?array $diagnosis = null;
 
     public ?string $diagnosisError = null;
+
+    #[Locked]
+    public ?string $sourceToken = null;
 
     public function mount(): void
     {
@@ -77,8 +84,28 @@ class DiagnosticoArchivosExternos extends Page
         $workflow = $this->workflow();
 
         try {
-            $this->diagnosis = $diagnosisService->diagnose($uploadedFile->getRealPath(), $workflow);
+            $this->deleteTemporarySource();
+            $extension = mb_strtolower($uploadedFile->getClientOriginalExtension(), 'UTF-8');
+
+            if (! in_array($extension, ['txt', 'xlsx'], true)) {
+                throw new \InvalidArgumentException('El archivo debe tener extensión TXT o XLSX.');
+            }
+
+            File::ensureDirectoryExists($this->temporarySourceDirectory());
+            $this->pruneExpiredTemporarySources();
+            $this->sourceToken = Str::uuid().'.'.$extension;
+            $sourcePath = $this->temporarySourceDirectory().DIRECTORY_SEPARATOR.$this->sourceToken;
+
+            if (! File::copy($uploadedFile->getRealPath(), $sourcePath)) {
+                throw new \RuntimeException('No se pudo conservar el archivo temporal para exportarlo.');
+            }
+
+            $this->diagnosis = $diagnosisService->diagnose($sourcePath, $workflow);
             $this->diagnosis['source_file'] = $uploadedFile->getClientOriginalName();
+
+            if (($this->diagnosis['status'] ?? null) !== 'ok') {
+                $this->deleteTemporarySource();
+            }
 
             Notification::make()
                 ->title('Diagnóstico completado')
@@ -86,6 +113,7 @@ class DiagnosticoArchivosExternos extends Page
                 ->success()
                 ->send();
         } catch (Throwable $exception) {
+            $this->deleteTemporarySource();
             $this->diagnosisError = $exception->getMessage();
 
             Notification::make()
@@ -107,10 +135,63 @@ class DiagnosticoArchivosExternos extends Page
             }
         }
 
+        $this->deleteTemporarySource();
         $this->diagnosis = null;
         $this->diagnosisError = null;
         $this->resetValidation();
         $this->form->fill();
+    }
+
+    public function exportTxt(ExternalWorkflowExportService $exportService): mixed
+    {
+        if (($this->diagnosis['status'] ?? null) !== 'ok') {
+            Notification::make()
+                ->title('La exportación no está habilitada')
+                ->body('Solo se pueden exportar archivos con diagnóstico OK.')
+                ->warning()
+                ->send();
+
+            return null;
+        }
+
+        $sourcePath = $this->temporarySourcePath();
+
+        if ($sourcePath === null) {
+            Notification::make()
+                ->title('El archivo temporal ya no está disponible')
+                ->body('Volvé a cargar y diagnosticar el archivo antes de exportar.')
+                ->danger()
+                ->send();
+
+            return null;
+        }
+
+        try {
+            $export = $exportService->export($sourcePath, $this->workflow());
+            $fileName = $this->exportFilePrefix().'-exportado-'.now()->format('Ymd-His').'.txt';
+
+            Notification::make()
+                ->title('TXT generado correctamente')
+                ->body('La descarga conserva las filas y columnas del archivo diagnosticado.')
+                ->success()
+                ->send();
+
+            return response()->streamDownload(
+                static function () use ($export): void {
+                    echo $export['content'];
+                },
+                $fileName,
+                ['Content-Type' => 'text/plain; charset=UTF-8'],
+            );
+        } catch (Throwable $exception) {
+            Notification::make()
+                ->title('No se pudo exportar el archivo')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            return null;
+        }
     }
 
     protected function workflow(): string
@@ -136,6 +217,57 @@ class DiagnosticoArchivosExternos extends Page
     public function diagnoseButtonLabel(): string
     {
         return 'Diagnosticar catálogo';
+    }
+
+    protected function exportFilePrefix(): string
+    {
+        return 'catalogo';
+    }
+
+    private function temporarySourceDirectory(): string
+    {
+        return storage_path('app/private/external-workflow-inputs');
+    }
+
+    private function temporarySourcePath(): ?string
+    {
+        if ($this->sourceToken === null
+            || preg_match('/\A[0-9a-f-]{36}\.(?:txt|xlsx)\z/', $this->sourceToken) !== 1) {
+            return null;
+        }
+
+        $directory = realpath($this->temporarySourceDirectory());
+        $path = realpath($this->temporarySourceDirectory().DIRECTORY_SEPARATOR.$this->sourceToken);
+
+        if ($directory === false || $path === false) {
+            return null;
+        }
+
+        $directoryPrefix = mb_strtolower($directory.DIRECTORY_SEPARATOR, 'UTF-8');
+
+        return str_starts_with(mb_strtolower($path, 'UTF-8'), $directoryPrefix) && is_file($path)
+            ? $path
+            : null;
+    }
+
+    private function deleteTemporarySource(): void
+    {
+        $path = $this->temporarySourcePath();
+
+        if ($path !== null) {
+            File::delete($path);
+        }
+
+        $this->sourceToken = null;
+    }
+
+    private function pruneExpiredTemporarySources(): void
+    {
+        foreach (File::files($this->temporarySourceDirectory()) as $file) {
+            if ($file->getMTime() < now()->subDay()->getTimestamp()) {
+                File::delete($file->getRealPath());
+            }
+        }
     }
 
     public function displayDiagnosticValue(mixed $value): string

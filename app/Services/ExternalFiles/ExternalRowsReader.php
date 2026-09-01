@@ -113,6 +113,7 @@ class ExternalRowsReader
                 'encoding' => $encoding,
                 'column_count' => count($headers),
                 'headers' => $headers,
+                'raw_headers' => $rawHeaders,
                 'row_count' => count($rows),
                 'ignored_secondary_block_count' => 0,
                 'duplicate_catalog_sections' => [],
@@ -129,6 +130,8 @@ class ExternalRowsReader
         $spreadsheet = $reader->load($filePath);
         $rows = [];
         $columnCounts = [];
+        $firstHeaders = null;
+        $firstRawHeaders = null;
 
         foreach ($audit['sheets'] as $sheetAudit) {
             $table = $sheetAudit['first_table'] ?? null;
@@ -148,6 +151,8 @@ class ExternalRowsReader
                 $table['columns'],
             );
             $headers = $this->safeHeaders($rawHeaders, $workflowType);
+            $firstHeaders ??= $headers;
+            $firstRawHeaders ??= $rawHeaders;
             $columnCounts[] = count($headers);
 
             for ($rowNumber = $table['header_row'] + 1; $rowNumber <= $table['end_row']; $rowNumber++) {
@@ -204,7 +209,8 @@ class ExternalRowsReader
                     ? ($columnCounts[0] ?? 0)
                     : null,
                 'column_counts' => array_values(array_unique($columnCounts)),
-                'headers' => null,
+                'headers' => $firstHeaders,
+                'raw_headers' => $firstRawHeaders,
                 'row_count' => count($rows),
                 'sheet_count' => $audit['sheet_count'],
                 'sheets_read' => array_values(array_unique(array_column($rows, 'source_sheet'))),
@@ -235,6 +241,7 @@ class ExternalRowsReader
                 'encoding' => $encoding,
                 'column_count' => 0,
                 'headers' => [],
+                'raw_headers' => [],
                 'row_count' => 0,
                 'ignored_secondary_block_count' => 0,
                 'duplicate_catalog_sections' => [],
