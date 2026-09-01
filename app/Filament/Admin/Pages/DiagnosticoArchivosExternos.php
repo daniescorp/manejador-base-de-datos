@@ -14,6 +14,7 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -182,6 +183,12 @@ class DiagnosticoArchivosExternos extends Page
         } catch (Throwable $exception) {
             $this->deleteTemporarySource();
             $this->diagnosisError = $exception->getMessage();
+
+            Log::warning('External file diagnosis failed.', [
+                'workflow' => $workflow,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
 
             Notification::make()
                 ->title('No se pudo diagnosticar el archivo')

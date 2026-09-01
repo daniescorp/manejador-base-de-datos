@@ -14,6 +14,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\Livewire;
 use Mockery\MockInterface;
@@ -160,6 +161,42 @@ class ExternalDiagnosisPageTest extends TestCase
 
         $component->call('clearDiagnosis');
 
+        $this->assertFileDoesNotExist($capturedPath);
+    }
+
+    public function test_a_service_failure_is_shown_and_logged_without_leaving_the_temporary_source(): void
+    {
+        $capturedPath = null;
+
+        $this->mock(ExternalExportDiagnosisService::class, function (MockInterface $mock) use (&$capturedPath): void {
+            $mock->shouldReceive('diagnose')
+                ->once()
+                ->withArgs(function (string $path, string $workflow) use (&$capturedPath): bool {
+                    $capturedPath = $path;
+
+                    return $workflow === 'catalog_body' && is_file($path);
+                })
+                ->andThrow(new RuntimeException('Fallo sintético del diagnóstico.'));
+        });
+        Log::shouldReceive('warning')
+            ->once()
+            ->with('External file diagnosis failed.', \Mockery::on(
+                fn (array $context): bool => $context['workflow'] === 'catalog_body'
+                    && $context['exception'] === RuntimeException::class
+                    && $context['message'] === 'Fallo sintético del diagnóstico.',
+            ));
+
+        Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => UploadedFile::fake()->createWithContent(
+                'catalogo-con-error.txt',
+                "CODIGO\tPRECIOOFERTA\n10001\t529",
+            )])
+            ->call('diagnose')
+            ->assertSet('diagnosis', null)
+            ->assertSet('diagnosisError', 'Fallo sintético del diagnóstico.')
+            ->assertSee('Fallo sintético del diagnóstico.');
+
+        $this->assertNotNull($capturedPath);
         $this->assertFileDoesNotExist($capturedPath);
     }
 
