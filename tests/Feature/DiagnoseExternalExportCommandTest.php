@@ -110,7 +110,7 @@ class DiagnoseExternalExportCommandTest extends TestCase
     public function test_clean_catalog_body_is_ok_and_builds_price_map(): void
     {
         $file = $this->textFile(
-            "CODIGO\tMARCA\tDESCRIPCION\tPRECIOLISTA\n30385\tGALLO\tArroz\t3699",
+            "CODIGO\tMARCA\tDESCRIPCION\tPRECIOLISTA\n30385\tGALLO\tACEITE BLEND 900 CC.\t3699",
         );
 
         $result = $this->runJson([
@@ -134,9 +134,43 @@ class DiagnoseExternalExportCommandTest extends TestCase
         ], $result['price_map']['30385']);
         $this->assertSame('30385', $result['preview_rows'][0]['code']);
         $this->assertSame('GALLO', $result['preview_rows'][0]['brand']);
-        $this->assertSame('Arroz', $result['preview_rows'][0]['description']);
+        $this->assertSame('ACEITE BLEND 900CC', $result['preview_rows'][0]['description']);
+        $this->assertSame(0, $result['warning_count']);
         $this->assertSame('$ 3.699', $result['preview_rows'][0]['price_list']);
         $this->assertSame('ok', $result['preview_rows'][0]['status']);
+    }
+
+    public function test_measure_normalization_only_changes_preview_and_never_diagnosis_counts(): void
+    {
+        $file = $this->textFile(implode("\n", [
+            "CODIGO\tMARCA\tDESCRIPCION\tUXB\tPRECIOLISTA",
+            "10001\tMARCA A\tACEITE BLEND 900 CC.\t12\t1994",
+            "10002\tMARCA B\tACEITE OLIVA Pet 500 CC.\t6\t2400",
+            "10003\tMARCA C\tPRODUCTO 240 GR.\t4\t3500",
+            "10004\tMARCA D\tPRODUCTO 500 ML.\t8\t1800",
+            "10005\tMARCA E\tPRODUCTO 1 LT.\t10\t900",
+        ]));
+        $beforeHash = hash_file('sha256', $file);
+
+        $result = $this->runJson([
+            '--file' => $file,
+            '--workflow' => 'catalog_body',
+        ]);
+
+        $this->assertSame(5, $result['rows_count']);
+        $this->assertSame(5, $result['summary']['product_count']);
+        $this->assertSame(5, $result['price_map_count']);
+        $this->assertSame(0, $result['warning_count']);
+        $this->assertSame([
+            'ACEITE BLEND 900CC',
+            'ACEITE OLIVA Pet 500CC',
+            'PRODUCTO 240GR',
+            'PRODUCTO 500ML',
+            'PRODUCTO 1LT',
+        ], array_column($result['preview_rows'], 'description'));
+        $this->assertStringContainsString('ACEITE BLEND 900 CC.', file_get_contents($file));
+        $this->assertStringContainsString('ACEITE OLIVA Pet 500 CC.', file_get_contents($file));
+        $this->assertSame($beforeHash, hash_file('sha256', $file));
     }
 
     public function test_diagnosis_does_not_require_database_or_generate_export_txt(): void

@@ -23,6 +23,7 @@ class ExternalExportDiagnosisService
         private readonly ExternalRowsReader $rowsReader,
         private readonly ExternalPriceMapBuilder $priceMapBuilder,
         private readonly ExternalFormatSamplesAuditService $codeClassifier,
+        private readonly ExternalDescriptionFormatter $descriptionFormatter,
     ) {}
 
     /** @return array<string, mixed> */
@@ -103,7 +104,7 @@ class ExternalExportDiagnosisService
     private function previewRows(array $rowEnvelopes, array $warnings, array $priceMap): array
     {
         return array_values(array_map(
-            static function (array $envelope, int $index) use ($warnings, $priceMap): array {
+            function (array $envelope, int $index) use ($warnings, $priceMap): array {
                 $data = $envelope['data'] ?? [];
                 $code = trim((string) ($data['CODIGO'] ?? $data['SKU'] ?? ''));
                 $sourceRowNumber = $envelope['row_number'] ?? ($index + 1);
@@ -126,7 +127,7 @@ class ExternalExportDiagnosisService
                     'row_number' => $sourceRowNumber,
                     'code' => $code,
                     'brand' => (string) ($data['MARCA'] ?? ''),
-                    'description' => (string) ($data['DESCRIPCION'] ?? ''),
+                    'description' => $this->descriptionFormatter->format((string) ($data['DESCRIPCION'] ?? '')),
                     'units_per_box' => (string) ($data['UXB'] ?? ''),
                     'price_list' => (string) ($prices['precio_lista'] ?? $data['PRECIOLISTA'] ?? ''),
                     'price_offer' => (string) ($prices['precio_oferta'] ?? $data['PRECIOOFERTA'] ?? ''),

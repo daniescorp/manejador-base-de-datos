@@ -14,9 +14,9 @@ class ExternalWorkflowExportServiceTest extends TestCase
     public function test_it_exports_an_ok_file_preserving_structure_order_and_source(): void
     {
         $source = $this->fixture(implode("\r\n", [
-            "CODIGO\tMARCA\tPRECIOLISTA\t@folder\tPRECIOLISTA\tARTE",
-            "10001\tBETA\t699,00\t.\\imagenes\\10001.png\t1199\tpieza-10001.ai",
-            "10002\tALFA\t$ 3.699\t.\\imagenes\\10002.png\t10.999,00\tpieza-10002.ai",
+            "CODIGO\tMARCA\tDESCRIPCION\tPRECIOLISTA\t@folder\tPRECIOLISTA\tARTE",
+            "10001\tBETA\tACEITE BLEND 900 CC.\t699,00\t.\\imagenes\\10001.png\t1199\tpieza-10001.ai",
+            "10002\tALFA\tACCESORIO GRANDE\t$ 3.699\t.\\imagenes\\10002.png\t10.999,00\tpieza-10002.ai",
         ]));
         $beforeHash = hash_file('sha256', $source);
         $writeQueries = [];
@@ -36,13 +36,13 @@ class ExternalWorkflowExportServiceTest extends TestCase
         $lines = explode("\r\n", $export['content']);
 
         $this->assertSame(2, $export['rows']);
-        $this->assertSame(6, $export['columns']);
-        $this->assertSame("CODIGO\tMARCA\tPRECIOLISTA\t@folder\tPRECIOLISTA\tARTE", $lines[0]);
+        $this->assertSame(7, $export['columns']);
+        $this->assertSame("CODIGO\tMARCA\tDESCRIPCION\tPRECIOLISTA\t@folder\tPRECIOLISTA\tARTE", $lines[0]);
         $this->assertSame([
-            '10001', 'BETA', '$ 699', '.\\imagenes\\10001.png', '$ 1.199', 'pieza-10001.ai',
+            '10001', 'BETA', 'ACEITE BLEND 900CC', '$ 699', '.\\imagenes\\10001.png', '$ 1.199', 'pieza-10001.ai',
         ], explode("\t", $lines[1]));
         $this->assertSame([
-            '10002', 'ALFA', '$ 3.699', '.\\imagenes\\10002.png', '$ 10.999', 'pieza-10002.ai',
+            '10002', 'ALFA', 'ACCESORIO GRANDE', '$ 3.699', '.\\imagenes\\10002.png', '$ 10.999', 'pieza-10002.ai',
         ], explode("\t", $lines[2]));
         $this->assertSame($beforeHash, $afterHash);
         $this->assertSame([], $writeQueries);

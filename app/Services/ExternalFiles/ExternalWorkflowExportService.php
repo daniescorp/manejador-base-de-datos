@@ -15,6 +15,7 @@ class ExternalWorkflowExportService
         private readonly ExternalExportDiagnosisService $diagnosisService,
         private readonly ExternalRowsReader $rowsReader,
         private readonly ExternalPriceFormatter $priceFormatter,
+        private readonly ExternalDescriptionFormatter $descriptionFormatter,
     ) {}
 
     /**
@@ -55,6 +56,8 @@ class ExternalWorkflowExportService
                     }
 
                     $value = $formatted['formatted_value'];
+                } elseif ($this->isDescriptionHeader($header)) {
+                    $value = $this->descriptionFormatter->format((string) $value);
                 }
 
                 $values[] = $this->txtValue($value);
@@ -77,6 +80,14 @@ class ExternalWorkflowExportService
         $normalized = preg_replace('/[^a-z0-9]+/u', '', $normalized) ?? $normalized;
 
         return preg_match('/^(?:preciolista|preciooferta|preciotachado)(?:\d+)?$/', $normalized) === 1;
+    }
+
+    private function isDescriptionHeader(string $header): bool
+    {
+        $normalized = mb_strtolower(Str::ascii(trim($header)), 'UTF-8');
+        $normalized = preg_replace('/[^a-z0-9]+/u', '', $normalized) ?? $normalized;
+
+        return preg_match('/^descripcion(?:\d+)?$/', $normalized) === 1;
     }
 
     private function txtValue(mixed $value): string

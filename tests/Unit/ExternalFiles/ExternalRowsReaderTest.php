@@ -84,6 +84,39 @@ class ExternalRowsReaderTest extends TestCase
         $this->assertFalse($priceResult['requires_review']);
     }
 
+    public function test_measure_units_remain_untouched_in_raw_rows_and_do_not_change_empty_row_detection(): void
+    {
+        $file = $this->textFile(implode("\n", [
+            "CODIGO\tMARCA\tDESCRIPCION\tUXB\tPRECIOLISTA",
+            "10001\tMARCA A\tACEITE BLEND 900 CC.\t12\t1994",
+            "10002\tMARCA B\tPRODUCTO 240 GR.\t6\t2400",
+            '',
+            "10003\tMARCA C\tPRODUCTO 500 ML.\t4\t3500",
+            "10004\tMARCA D\tPRODUCTO 1 LT.\t8\t1800",
+        ]));
+        $beforeHash = hash_file('sha256', $file);
+
+        $result = $this->reader()->read(
+            $file,
+            ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY,
+        );
+
+        $this->assertSame(4, $result['metadata']['row_count']);
+        $this->assertCount(4, $result['rows']);
+        $this->assertSame([2, 3, 5, 6], array_column($result['rows'], 'row_number'));
+        $this->assertSame([
+            'ACEITE BLEND 900 CC.',
+            'PRODUCTO 240 GR.',
+            'PRODUCTO 500 ML.',
+            'PRODUCTO 1 LT.',
+        ], array_column(array_column($result['rows'], 'data'), 'DESCRIPCION'));
+        $this->assertSame(['10001', '10002', '10003', '10004'], array_column(
+            array_column($result['rows'], 'data'),
+            'CODIGO',
+        ));
+        $this->assertSame($beforeHash, hash_file('sha256', $file));
+    }
+
     public function test_it_reads_only_the_primary_xlsx_table_and_ignores_empty_and_secondary_rows(): void
     {
         $file = $this->promoWorkbook();
