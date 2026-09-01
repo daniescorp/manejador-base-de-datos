@@ -5,7 +5,10 @@ namespace App\Services\ExternalFiles;
 use App\Services\Audits\ExternalFormatSamplesAuditService;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\StringHelper;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 class ExternalRowsReader
 {
@@ -126,7 +129,7 @@ class ExternalRowsReader
     {
         $audit = $this->auditService->auditWorkbook($filePath, workflowType: $workflowType);
         $reader = IOFactory::createReaderForFile($filePath);
-        $reader->setReadDataOnly(true);
+        $reader->setReadDataOnly(false);
         $spreadsheet = $reader->load($filePath);
         $rows = [];
         $columnCounts = [];
@@ -159,7 +162,11 @@ class ExternalRowsReader
                 $values = [];
 
                 for ($column = 1; $column <= count($headers); $column++) {
-                    $values[] = trim((string) $sheet->getCell([$column, $rowNumber])->getFormattedValue());
+                    $cell = $sheet->getCell([$column, $rowNumber]);
+                    $value = $this->isPriceHeader($headers[$column - 1])
+                        ? $this->formattedPriceValue($cell)
+                        : $this->dataOnlyValue($cell);
+                    $values[] = trim((string) $value);
                 }
 
                 if ($this->isEmptyRow($values)) {
@@ -330,6 +337,37 @@ class ExternalRowsReader
             $values,
             static fn (mixed $value): bool => trim((string) $value) !== '',
         )) === 0;
+    }
+
+    private function isPriceHeader(string $header): bool
+    {
+        return in_array($header, ['PRECIOLISTA', 'PRECIOOFERTA', 'PRECIOTACHADO'], true);
+    }
+
+    private function formattedPriceValue(Cell $cell): string
+    {
+        $decimalSeparator = StringHelper::getDecimalSeparator();
+        $thousandsSeparator = StringHelper::getThousandsSeparator();
+
+        try {
+            StringHelper::setDecimalSeparator(',');
+            StringHelper::setThousandsSeparator('.');
+
+            return NumberFormat::toFormattedString(
+                $this->dataOnlyValue($cell),
+                $cell->getStyle()->getNumberFormat()->getFormatCode(),
+            );
+        } finally {
+            StringHelper::setDecimalSeparator($decimalSeparator);
+            StringHelper::setThousandsSeparator($thousandsSeparator);
+        }
+    }
+
+    private function dataOnlyValue(Cell $cell): mixed
+    {
+        return $cell->isFormula()
+            ? $cell->getOldCalculatedValue()
+            : $cell->getValue();
     }
 
     /** @return array{character: string, label: string} */
