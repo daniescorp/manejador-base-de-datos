@@ -12,7 +12,9 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\Livewire;
 use Mockery\MockInterface;
 use RuntimeException;
@@ -64,6 +66,8 @@ class ExternalDiagnosisPageTest extends TestCase
             ->assertSuccessful()
             ->assertFormFieldExists('file', function (FileUpload $field): bool {
                 return $field->shouldStoreFiles() === false
+                    && $field->isPreviewable()
+                    && $field->getPlaceholder() === 'Arrastrá y soltá tu archivo o hacé clic para seleccionarlo'
                     && $field->getAcceptedFileTypes() === [
                         'text/plain',
                         'text/tab-separated-values',
@@ -71,10 +75,44 @@ class ExternalDiagnosisPageTest extends TestCase
                     ];
             })
             ->assertFormFieldDoesNotExist('workflow')
+            ->assertSeeHtml('class="fi-fo-file-upload')
+            ->assertSeeHtml('x-load-src=')
+            ->assertSeeHtml('wire:submit="diagnose"')
+            ->assertSeeHtml('type="submit"')
             ->assertSee('Catálogo cuerpo general')
             ->assertSee('Subí un TXT tabulado o Excel comercial de catálogo.')
+            ->assertSee('Arrastrá y soltá tu archivo o hacé clic para seleccionarlo')
             ->assertSee('Diagnosticar catálogo')
             ->assertDontSee('Workflow');
+    }
+
+    public function test_diagnosis_requires_an_uploaded_file(): void
+    {
+        Livewire::test(DiagnosticoArchivosExternos::class)
+            ->call('diagnose')
+            ->assertHasFormErrors(['file' => 'required'])
+            ->assertSee('Debe subir un archivo antes de diagnosticar.');
+    }
+
+    public function test_diagnosis_reports_when_the_temporary_upload_is_no_longer_available(): void
+    {
+        $component = Livewire::test(DiagnosticoArchivosExternos::class)
+            ->fillForm(['file' => UploadedFile::fake()->createWithContent(
+                'catalogo-temporal.txt',
+                "CODIGO\tPRECIOOFERTA\n10001\t529",
+            )]);
+
+        $temporaryFile = Arr::first($component->get('data')['file']);
+
+        $this->assertInstanceOf(TemporaryUploadedFile::class, $temporaryFile);
+        $temporaryFile->delete();
+        $component->instance()->fileWasUploaded = true;
+        $component->instance()->diagnose(app(ExternalExportDiagnosisService::class));
+
+        $this->assertSame(
+            'El archivo temporal no está disponible. Vuelva a subirlo.',
+            $component->instance()->diagnosisError,
+        );
     }
 
     public function test_the_promotions_page_accepts_supported_files_without_a_workflow_selector(): void

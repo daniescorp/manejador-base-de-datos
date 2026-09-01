@@ -44,19 +44,7 @@
             <span class="process-status process-status-review">Sin persistencia</span>
         </div>
 
-        <form wire:submit="diagnose" class="diagnosis-form">
-            {{ $this->form }}
-
-            <div class="diagnosis-form-actions">
-                <x-filament::button type="submit" icon="heroicon-o-magnifying-glass" wire:loading.attr="disabled" wire:target="diagnose">
-                    {{ $this->diagnoseButtonLabel() }}
-                </x-filament::button>
-
-                <x-filament::button type="button" color="gray" wire:click="clearDiagnosis" wire:loading.attr="disabled">
-                    Limpiar diagnóstico
-                </x-filament::button>
-            </div>
-        </form>
+        {{ $this->uploadForm }}
 
         @if ($diagnosisError)
             <div class="diagnosis-alert diagnosis-alert-blocked" role="alert">

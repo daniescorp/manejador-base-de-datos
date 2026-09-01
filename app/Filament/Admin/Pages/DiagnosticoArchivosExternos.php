@@ -4,9 +4,13 @@ namespace App\Filament\Admin\Pages;
 
 use App\Services\ExternalFiles\ExternalExportDiagnosisService;
 use App\Services\ExternalFiles\ExternalWorkflowExportService;
+use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\EmbeddedSchema;
+use Filament\Schemas\Components\Form;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
@@ -15,7 +19,10 @@ use Livewire\Attributes\Locked;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Throwable;
 
-/** @property-read Schema $form */
+/**
+ * @property-read Schema $form
+ * @property-read Schema $uploadForm
+ */
 class DiagnosticoArchivosExternos extends Page
 {
     protected static ?string $navigationLabel = 'Diagnóstico de Archivos Externos';
@@ -41,6 +48,8 @@ class DiagnosticoArchivosExternos extends Page
     #[Locked]
     public ?string $sourceToken = null;
 
+    public bool $fileWasUploaded = false;
+
     public function mount(): void
     {
         $this->form->fill();
@@ -53,30 +62,82 @@ class DiagnosticoArchivosExternos extends Page
                 FileUpload::make('file')
                     ->label('Archivo externo')
                     ->helperText($this->uploadHelperText())
+                    ->placeholder('Arrastrá y soltá tu archivo o hacé clic para seleccionarlo')
                     ->acceptedFileTypes([
                         'text/plain',
                         'text/tab-separated-values',
                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     ])
                     ->storeFiles(false)
-                    ->previewable(false)
+                    ->afterStateUpdated(function (mixed $state): void {
+                        $this->fileWasUploaded = filled(Arr::wrap($state));
+                    })
                     ->maxSize(25 * 1024)
                     ->required()
+                    ->validationMessages([
+                        'required' => 'Debe subir un archivo antes de diagnosticar.',
+                    ])
                     ->columnSpanFull(),
             ])
             ->statePath('data')
             ->columns(1);
     }
 
+    public function uploadForm(Schema $schema): Schema
+    {
+        return $schema
+            ->components([
+                Form::make([
+                    EmbeddedSchema::make('form'),
+                ])
+                    ->id('external-diagnosis-form')
+                    ->livewireSubmitHandler('diagnose')
+                    ->extraAttributes(['class' => 'diagnosis-form'])
+                    ->footer([
+                        Actions::make([
+                            Action::make('diagnose')
+                                ->label($this->diagnoseButtonLabel())
+                                ->icon('heroicon-o-magnifying-glass')
+                                ->submit('diagnose'),
+                            Action::make('clearDiagnosis')
+                                ->label('Limpiar diagnóstico')
+                                ->color('gray')
+                                ->action(function (): void {
+                                    $this->clearDiagnosis();
+                                }),
+                        ])
+                            ->extraAttributes(['class' => 'diagnosis-form-actions']),
+                    ]),
+            ]);
+    }
+
     public function diagnose(ExternalExportDiagnosisService $diagnosisService): void
     {
         $this->diagnosis = null;
         $this->diagnosisError = null;
+        $rawUploadedFile = Arr::first(Arr::wrap($this->data['file'] ?? []));
+
+        if ($this->fileWasUploaded && ! $rawUploadedFile instanceof TemporaryUploadedFile) {
+            $this->reportUnavailableTemporaryUpload();
+
+            return;
+        }
+
+        if ($rawUploadedFile instanceof TemporaryUploadedFile) {
+            $rawUploadedPath = $rawUploadedFile->getRealPath();
+
+            if ($rawUploadedPath === false || ! is_file($rawUploadedPath)) {
+                $this->reportUnavailableTemporaryUpload();
+
+                return;
+            }
+        }
+
         $state = $this->form->getState();
         $uploadedFile = $state['file'] ?? null;
 
         if (! $uploadedFile instanceof TemporaryUploadedFile) {
-            $this->addError('data.file', 'Seleccioná un archivo TXT o XLSX válido.');
+            $this->addError('data.file', 'Debe subir un archivo antes de diagnosticar.');
 
             return;
         }
@@ -85,6 +146,12 @@ class DiagnosticoArchivosExternos extends Page
 
         try {
             $this->deleteTemporarySource();
+            $uploadedPath = $uploadedFile->getRealPath();
+
+            if ($uploadedPath === false || ! is_file($uploadedPath)) {
+                throw new \RuntimeException('El archivo temporal no está disponible. Vuelva a subirlo.');
+            }
+
             $extension = mb_strtolower($uploadedFile->getClientOriginalExtension(), 'UTF-8');
 
             if (! in_array($extension, ['txt', 'xlsx'], true)) {
@@ -96,7 +163,7 @@ class DiagnosticoArchivosExternos extends Page
             $this->sourceToken = Str::uuid().'.'.$extension;
             $sourcePath = $this->temporarySourceDirectory().DIRECTORY_SEPARATOR.$this->sourceToken;
 
-            if (! File::copy($uploadedFile->getRealPath(), $sourcePath)) {
+            if (! File::copy($uploadedPath, $sourcePath)) {
                 throw new \RuntimeException('No se pudo conservar el archivo temporal para exportarlo.');
             }
 
@@ -123,6 +190,7 @@ class DiagnosticoArchivosExternos extends Page
                 ->send();
         } finally {
             $uploadedFile->delete();
+            $this->fileWasUploaded = false;
             $this->form->fill();
         }
     }
@@ -138,6 +206,7 @@ class DiagnosticoArchivosExternos extends Page
         $this->deleteTemporarySource();
         $this->diagnosis = null;
         $this->diagnosisError = null;
+        $this->fileWasUploaded = false;
         $this->resetValidation();
         $this->form->fill();
     }
@@ -268,6 +337,22 @@ class DiagnosticoArchivosExternos extends Page
                 File::delete($file->getRealPath());
             }
         }
+    }
+
+    private function reportUnavailableTemporaryUpload(): void
+    {
+        $message = 'El archivo temporal no está disponible. Vuelva a subirlo.';
+        $this->diagnosisError = $message;
+        $this->fileWasUploaded = false;
+        $this->addError('data.file', $message);
+
+        Notification::make()
+            ->title('No se pudo diagnosticar el archivo')
+            ->body($message)
+            ->danger()
+            ->send();
+
+        $this->form->fill();
     }
 
     public function displayDiagnosticValue(mixed $value): string
