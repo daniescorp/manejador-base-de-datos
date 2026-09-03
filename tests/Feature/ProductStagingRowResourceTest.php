@@ -345,6 +345,56 @@ class ProductStagingRowResourceTest extends TestCase
         }
     }
 
+    public function test_detail_can_regenerate_preview_with_description_rules_without_touching_master(): void
+    {
+        NormalizationRule::query()->update(['active' => false]);
+        $masterProduct = MasterProduct::factory()->create([
+            'descripcion_catalogo' => 'Salsa khune aprobada',
+            'marca_homologada' => 'KUHNE',
+        ]);
+        $row = $this->createReviewRow([
+            'master_product_id' => $masterProduct->getKey(),
+            'nombre_sku_original' => 'Salsa khune yoghurt 250 ml.',
+            'marca_original' => 'KUHNE',
+            'status' => 'previewed',
+            'requires_review' => false,
+            'review_reason' => null,
+            'normalized_preview' => [
+                'descripcion_catalogo' => 'Salsa khune yoghurt 250 ml.',
+                'marca_homologada' => 'KUHNE',
+            ],
+        ]);
+        NormalizationRule::factory()->create([
+            'rule_name' => 'Quitar KHUNE de descripción - KUHNE',
+            'detected_value' => 'KHUNE',
+            'replacement_value' => null,
+            'rule_type' => 'description_normalization',
+            'applies_to_field' => 'descripcion_catalogo',
+            'context' => 'marca_homologada=KUHNE',
+            'priority' => 100,
+            'is_automatic' => true,
+            'requires_preview' => true,
+            'requires_review' => false,
+            'confidence_level' => 'high',
+            'active' => true,
+        ]);
+        $masterSnapshot = $masterProduct->fresh()->getAttributes();
+        $changeLogCount = ProductChangeLog::query()->count();
+
+        Livewire::test(ViewProductStagingRow::class, ['record' => $row->getRouteKey()])
+            ->assertActionVisible('regeneratePreview')
+            ->callAction('regeneratePreview')
+            ->assertNotified('Preview regenerado con el Diccionario actual.');
+
+        $row->refresh();
+        $this->assertSame('Salsa yoghurt 250 ml.', $row->normalized_preview['descripcion_catalogo']);
+        $this->assertSame('KUHNE', $row->normalized_preview['marca_homologada']);
+        $this->assertSame($masterSnapshot, $masterProduct->fresh()->getAttributes());
+        $this->assertSame($changeLogCount, ProductChangeLog::query()->count());
+        $this->assertNull($row->approved_at);
+        $this->assertNull($row->approved_by_id);
+    }
+
     public function test_detail_approval_action_creates_master_logs_and_success_notification(): void
     {
         $row = $this->createReviewRow([

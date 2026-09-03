@@ -20,6 +20,7 @@ class ProductStagingAnalyzer
 
     public function __construct(
         private readonly DescriptionRulePattern $descriptionRulePattern,
+        private readonly DescriptionNormalizationRuleApplier $descriptionRuleApplier,
     ) {}
 
     public function analyze(ProductStagingRow $row): void
@@ -33,12 +34,13 @@ class ProductStagingAnalyzer
             $reviewReasons = [];
             $descriptionSource = (string) $stagingRow->nombre_sku_original;
             $descriptionIsBlank = blank(trim($descriptionSource));
+            $homologatedBrand = $this->homologatedBrandForContext($stagingRow);
 
             if ($descriptionIsBlank) {
                 $reviewReasons[] = 'Nombre Sku original vacío';
             } else {
                 foreach ($this->activeDescriptionRules() as $rule) {
-                    if (! $this->matchesDescription($descriptionSource, $rule)) {
+                    if (! $this->matchesDescription($descriptionSource, $homologatedBrand, $rule)) {
                         continue;
                     }
 
@@ -50,7 +52,7 @@ class ProductStagingAnalyzer
                         $descriptionSource,
                     );
 
-                    if ($rule->requires_review) {
+                    if ($rule->requires_review || $this->isContextlessDescriptionRule($rule)) {
                         $reviewReasons[] = "Regla {$rule->detected_value}: requiere revisión manual o contextual";
                     }
                 }
@@ -164,13 +166,40 @@ class ProductStagingAnalyzer
         $suggestion->save();
     }
 
-    private function matchesDescription(string $source, NormalizationRule $rule): bool
+    private function matchesDescription(
+        string $source,
+        string $homologatedBrand,
+        NormalizationRule $rule,
+    ): bool
     {
         if (blank($rule->detected_value)) {
             return false;
         }
 
+        if ($rule->rule_type === 'description_normalization') {
+            return $this->descriptionRuleApplier->evaluateRule(
+                $source,
+                $homologatedBrand,
+                $rule,
+            )['matched'];
+        }
+
         return $this->descriptionRulePattern->matches($source, $rule);
+    }
+
+    private function homologatedBrandForContext(ProductStagingRow $row): string
+    {
+        $previewBrand = $row->normalized_preview[self::BRAND_FIELD] ?? null;
+
+        return filled($previewBrand)
+            ? (string) $previewBrand
+            : (string) $row->marca_original;
+    }
+
+    private function isContextlessDescriptionRule(NormalizationRule $rule): bool
+    {
+        return $rule->rule_type === 'description_normalization'
+            && blank($rule->context);
     }
 
     private function matchesBrand(string $source, ?string $detectedValue): bool
@@ -202,7 +231,8 @@ class ProductStagingAnalyzer
         NormalizationRule $rule,
         string $fieldName,
     ): ?string {
-        if ($rule->replacement_value === null) {
+        if ($rule->replacement_value === null
+            && $rule->rule_type !== 'description_normalization') {
             return null;
         }
 
@@ -235,7 +265,7 @@ class ProductStagingAnalyzer
             return 'Regla sensible: requiere revisión manual. No aplicar automáticamente.';
         }
 
-        if ($rule->requires_review) {
+        if ($rule->requires_review || $this->isContextlessDescriptionRule($rule)) {
             return 'Regla contextual: requiere revisión antes de aplicar.';
         }
 

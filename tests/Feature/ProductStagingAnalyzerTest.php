@@ -75,6 +75,87 @@ class ProductStagingAnalyzerTest extends TestCase
         $this->assertNull($suggestion->applied_at);
     }
 
+    public function test_description_normalization_matches_only_the_configured_brand_context(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'creciente',
+            'replacement_value' => null,
+            'rule_type' => 'description_normalization',
+            'applies_to_field' => 'descripcion_catalogo',
+            'context' => 'marca_homologada=CUARTO CRECIENTE',
+            'priority' => 100,
+            'is_automatic' => false,
+            'requires_preview' => true,
+            'requires_review' => true,
+            'confidence_level' => 'high',
+        ]);
+        $matchingRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'YERBA CRECIENTE SUAVE',
+            'marca_original' => '  Cuarto   Creciente ',
+        ]);
+        $otherBrandRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'YERBA CRECIENTE SUAVE',
+            'marca_original' => 'OTRA MARCA',
+        ]);
+
+        $this->analyzer()->analyze($matchingRow);
+        $this->analyzer()->analyze($otherBrandRow);
+
+        $suggestion = $this->suggestionFor($matchingRow, $rule);
+        $this->assertSame('YERBA SUAVE', $suggestion->suggested_value);
+        $this->assertTrue($matchingRow->fresh()->requires_review);
+        $this->assertSame(0, $this->suggestionQuery($otherBrandRow, $rule)->count());
+        $this->assertSame('YERBA CRECIENTE SUAVE', $otherBrandRow->fresh()->nombre_sku_original);
+    }
+
+    public function test_description_normalization_matches_a_standalone_word_only(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'creciente',
+            'replacement_value' => '',
+            'rule_type' => 'description_normalization',
+            'applies_to_field' => 'descripcion_catalogo',
+            'context' => 'marca_homologada=CUARTO CRECIENTE',
+        ]);
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'PRODUCTO CRECIENTEMENTE',
+            'marca_original' => 'CUARTO CRECIENTE',
+        ]);
+
+        $this->analyzer()->analyze($row);
+
+        $this->assertSame(0, $this->suggestionQuery($row, $rule)->count());
+    }
+
+    public function test_khune_description_rule_does_not_apply_to_another_brand_or_a_larger_word(): void
+    {
+        $rule = $this->createRule([
+            'detected_value' => 'KHUNE',
+            'replacement_value' => null,
+            'rule_type' => 'description_normalization',
+            'applies_to_field' => 'descripcion_catalogo',
+            'context' => 'marca_homologada=KUHNE',
+            'is_automatic' => true,
+            'requires_review' => false,
+        ]);
+        $otherBrandRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'Salsa khune yoghurt 250 ml.',
+            'marca_original' => 'OTRA MARCA',
+        ]);
+        $largerWordRow = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'Salsa KHUNESA yoghurt 250 ml.',
+            'marca_original' => 'KUHNE',
+        ]);
+
+        $this->analyzer()->analyze($otherBrandRow);
+        $this->analyzer()->analyze($largerWordRow);
+
+        $this->assertSame(0, $this->suggestionQuery($otherBrandRow, $rule)->count());
+        $this->assertSame(0, $this->suggestionQuery($largerWordRow, $rule)->count());
+        $this->assertSame('Salsa khune yoghurt 250 ml.', $otherBrandRow->fresh()->nombre_sku_original);
+        $this->assertSame('Salsa KHUNESA yoghurt 250 ml.', $largerWordRow->fresh()->nombre_sku_original);
+    }
+
     public function test_it_does_not_duplicate_suggestions_when_reanalyzed(): void
     {
         $rule = $this->createRule([

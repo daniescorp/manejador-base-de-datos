@@ -43,6 +43,7 @@ class NormalizationRuleResource extends Resource
         'no_change' => 'Conservar sin cambios',
         'category_word_replacement' => 'Reemplazo de palabra de categoría',
         'brand_normalization' => 'Normalización de marca',
+        'description_normalization' => 'Normalización de descripción',
     ];
 
     public const CONFIDENCE_LEVEL_OPTIONS = [
@@ -96,6 +97,7 @@ class NormalizationRuleResource extends Resource
                     ->searchable(),
                 TextInput::make('context')
                     ->label('Contexto')
+                    ->helperText('Para descripción: marca_homologada=MARCA. Sin contexto, la regla es global y requiere revisión.')
                     ->maxLength(255),
                 TextInput::make('priority')
                     ->label('Prioridad')
@@ -108,12 +110,14 @@ class NormalizationRuleResource extends Resource
                     ->options(self::CONFIDENCE_LEVEL_OPTIONS),
                 Toggle::make('is_automatic')
                     ->label('Aplicación automática')
+                    ->helperText('En normalización de descripción, modifica el preview solo si “Requiere revisión” está apagado.')
                     ->default(false),
                 Toggle::make('requires_preview')
                     ->label('Requiere previsualización')
                     ->default(true),
                 Toggle::make('requires_review')
                     ->label('Requiere revisión')
+                    ->helperText('En normalización de descripción, crea una sugerencia visible y conserva la salida del preview.')
                     ->default(false),
                 Toggle::make('active')
                     ->label('Activa')

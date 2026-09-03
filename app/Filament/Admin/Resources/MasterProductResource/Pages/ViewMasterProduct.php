@@ -5,6 +5,7 @@ namespace App\Filament\Admin\Resources\MasterProductResource\Pages;
 use App\Filament\Admin\Resources\MasterProductResource;
 use App\Models\MasterProduct;
 use App\Models\User;
+use App\Services\Normalization\MasterProductDescriptionNormalizationService;
 use App\Services\Products\MasterProductMeasurementService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -22,6 +23,48 @@ class ViewMasterProduct extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('reanalyzeDescription')
+                ->label('Reanalizar descripción con Diccionario')
+                ->icon(Heroicon::OutlinedLanguage)
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading('Previsualizar normalización de descripción')
+                ->modalDescription(fn (): string => $this->descriptionNormalizationSummary())
+                ->modalSubmitActionLabel('Confirmar y actualizar descripción')
+                ->visible(fn (): bool => filled($this->getRecord()->descripcion_catalogo)
+                    && filled($this->getRecord()->marca_homologada))
+                ->action(function (MasterProductDescriptionNormalizationService $service): void {
+                    $user = auth()->user();
+
+                    if (! $user instanceof User) {
+                        Notification::make()
+                            ->title('No se pudo normalizar la descripción')
+                            ->body('Se requiere un usuario válido.')
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    try {
+                        $result = $service->apply($this->getRecord(), $user);
+                        $this->getRecord()->refresh();
+                        $this->refreshFormData(['descripcion_catalogo']);
+
+                        Notification::make()
+                            ->title($result['changed']
+                                ? 'Descripción actualizada con el Diccionario.'
+                                : 'Sin cambios sugeridos')
+                            ->success()
+                            ->send();
+                    } catch (Throwable $exception) {
+                        Notification::make()
+                            ->title('No se pudo normalizar la descripción')
+                            ->body($exception->getMessage())
+                            ->danger()
+                            ->send();
+                    }
+                }),
             Action::make('completeMeasurement')
                 ->label('Completar medida')
                 ->icon(Heroicon::OutlinedScale)
@@ -91,6 +134,26 @@ class ViewMasterProduct extends ViewRecord
                     );
                 }),
         ];
+    }
+
+    private function descriptionNormalizationSummary(): string
+    {
+        $result = app(MasterProductDescriptionNormalizationService::class)
+            ->preview($this->getRecord());
+
+        if (! $result['changed']) {
+            $pending = array_column($result['pending_suggestions'], 'name');
+
+            return $pending === []
+                ? 'Sin cambios sugeridos.'
+                : 'Sin cambios automáticos. Sugerencias pendientes de revisión: '.implode(', ', $pending).'.';
+        }
+
+        return implode("\n", [
+            'Antes: '.$result['original'],
+            'Después: '.$result['normalized'],
+            'Reglas aplicadas: '.implode(', ', array_column($result['applied_rules'], 'name')),
+        ]);
     }
 
     private function canManageMeasurement(): bool

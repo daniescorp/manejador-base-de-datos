@@ -52,6 +52,12 @@ class DescriptionRulePattern
             $replacementCount,
         );
 
+        if ($combined !== null
+            && $replacementCount > 0
+            && $rule->rule_type === 'description_normalization') {
+            $combined = preg_replace('/\s+/u', ' ', trim($combined)) ?? trim($combined);
+        }
+
         return [$combined ?? $text, $combined !== null && $replacementCount > 0];
     }
 
@@ -105,12 +111,47 @@ class DescriptionRulePattern
         ) === 1;
     }
 
+    public function matchesHomologatedBrandContext(string $brand, NormalizationRule $rule): bool
+    {
+        $context = trim((string) $rule->context);
+
+        if ($context === '') {
+            return true;
+        }
+
+        if (preg_match('/^marca_homologada\s*=\s*(.+)$/iu', $context, $matches) !== 1) {
+            return false;
+        }
+
+        $expectedBrand = $this->normalizeComparableText($matches[1]);
+
+        return $expectedBrand !== ''
+            && $this->normalizeComparableText($brand) === $expectedBrand;
+    }
+
     private function pattern(NormalizationRule $rule): string
     {
         $measurement = $this->measurementDefinition($rule);
 
         if ($measurement !== null) {
             return $measurement['pattern'];
+        }
+
+        if ($rule->rule_type === 'description_normalization') {
+            $phrase = preg_replace(
+                '/\s+/u',
+                ' ',
+                trim((string) $rule->detected_value),
+            ) ?? trim((string) $rule->detected_value);
+            $token = implode(
+                '\\h+',
+                array_map(
+                    static fn (string $part): string => preg_quote($part, '~'),
+                    explode(' ', $phrase),
+                ),
+            );
+
+            return "~(?<![\\p{L}\\p{N}_]){$token}(?![\\p{L}\\p{N}_])~iu";
         }
 
         if ($rule->rule_type === 'abbreviation'
@@ -183,5 +224,12 @@ class DescriptionRulePattern
             '~(?<![\\p{L}\\p{N}_])(?:T(?:E|É)|INFUSI(?:O|Ó)N(?:ES)?|ENSOBR(?:ADO|AR)|SOBRES?|SAQUITOS?|MATE\\h+COCIDO|S/(?:E|ENS\.?))(?![\\p{L}\\p{N}_])~iu',
             $text,
         ) === 1;
+    }
+
+    private function normalizeComparableText(string $text): string
+    {
+        $normalized = preg_replace('/\s+/u', ' ', trim($text)) ?? trim($text);
+
+        return mb_strtolower($normalized, 'UTF-8');
     }
 }

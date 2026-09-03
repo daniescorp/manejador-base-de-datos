@@ -90,6 +90,130 @@ class ProductStagingPreviewComposerTest extends TestCase
         $this->assertNull($row->approved_by_id);
     }
 
+    public function test_automatic_contextual_description_normalization_removes_khune_and_preserves_brand(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'Salsa   khune   yoghurt 250 ml.',
+            'marca_original' => 'KUHNE',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'KHUNE',
+            'replacement_value' => '',
+            'rule_type' => 'description_normalization',
+            'context' => 'marca_homologada=KUHNE',
+            'is_automatic' => true,
+            'requires_preview' => true,
+            'requires_review' => false,
+            'confidence_level' => 'high',
+        ]);
+        $suggestion = $this->createSuggestion($row, $rule);
+
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('Salsa yoghurt 250 ml.', $preview['descripcion_catalogo']);
+        $this->assertStringNotContainsString('  ', $preview['descripcion_catalogo']);
+        $this->assertSame('KUHNE', $preview['marca_homologada']);
+        $this->assertSame('KUHNE', $row->marca_original);
+        $this->assertSame(
+            [$suggestion->getKey()],
+            $preview['fields']['descripcion_catalogo']['applied_suggestion_ids'],
+        );
+        $this->assertSame('previewed', $row->status);
+        $this->assertFalse($row->requires_review);
+    }
+
+    public function test_review_required_description_normalization_is_visible_but_does_not_change_preview(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'Salsa khune yoghurt 250 ml.',
+            'marca_original' => 'KUHNE',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'KHUNE',
+            'replacement_value' => '',
+            'rule_type' => 'description_normalization',
+            'context' => 'marca_homologada=KUHNE',
+            'is_automatic' => true,
+            'requires_preview' => true,
+            'requires_review' => true,
+        ]);
+        $suggestion = $this->createSuggestion($row, $rule, [
+            'suggested_value' => 'Salsa yoghurt 250 ml.',
+        ]);
+
+        $preview = $this->composer()->compose($row);
+        $row->refresh();
+
+        $this->assertSame('Salsa khune yoghurt 250 ml.', $preview['descripcion_catalogo']);
+        $this->assertSame('KUHNE', $preview['marca_homologada']);
+        $this->assertSame(
+            [$suggestion->getKey()],
+            $preview['fields']['descripcion_catalogo']['pending_review_suggestion_ids'],
+        );
+        $this->assertSame('pending', $suggestion->fresh()->status);
+        $this->assertTrue($row->requires_review);
+    }
+
+    public function test_contextual_description_normalization_preserves_other_fields(): void
+    {
+        $protected = [
+            'codigo_producto_original' => 'COD-CREC-01',
+            'uxb_original' => '24',
+            'categoria_original' => 'ALMACÉN',
+            'grupo_original' => 'YERBAS',
+            'marca_original' => 'CUARTO CRECIENTE',
+        ];
+        $row = ProductStagingRow::factory()->create([
+            ...$protected,
+            'nombre_sku_original' => 'YERBA CRECIENTE SUAVE',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'creciente',
+            'replacement_value' => '',
+            'rule_type' => 'description_normalization',
+            'context' => 'marca_homologada=CUARTO CRECIENTE',
+            'is_automatic' => false,
+            'requires_review' => true,
+        ]);
+        $this->createSuggestion($row, $rule);
+
+        $this->composer()->compose($row);
+
+        $this->assertSame($protected, $row->fresh()->only(array_keys($protected)));
+    }
+
+    public function test_contextless_description_normalization_is_global_but_remains_pending_review(): void
+    {
+        $row = ProductStagingRow::factory()->create([
+            'nombre_sku_original' => 'YERBA CRECIENTE SUAVE',
+            'marca_original' => 'OTRA MARCA',
+        ]);
+        $rule = $this->createRule([
+            'detected_value' => 'creciente',
+            'replacement_value' => '',
+            'rule_type' => 'description_normalization',
+            'context' => null,
+            'is_automatic' => true,
+            'requires_review' => false,
+        ]);
+
+        app(ProductStagingAnalyzer::class)->analyze($row);
+        $suggestion = NormalizationSuggestion::query()->where([
+            'product_staging_row_id' => $row->getKey(),
+            'normalization_rule_id' => $rule->getKey(),
+        ])->sole();
+        $preview = $this->composer()->compose($row);
+
+        $this->assertSame('Yerba suave', $preview['descripcion_catalogo']);
+        $this->assertSame(
+            [$suggestion->getKey()],
+            $preview['fields']['descripcion_catalogo']['applied_suggestion_ids'],
+        );
+        $this->assertTrue($row->fresh()->requires_review);
+        $this->assertStringContainsString('requiere revisión', $row->fresh()->review_reason);
+    }
+
     public function test_measurement_previews_do_not_leave_partial_unit_suffixes(): void
     {
         $cases = [

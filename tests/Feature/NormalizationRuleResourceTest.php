@@ -120,6 +120,36 @@ class NormalizationRuleResourceTest extends TestCase
         $this->assertSame($this->user->getKey(), $rule->updated_by_id);
     }
 
+    public function test_it_creates_a_contextual_description_cleanup_rule_with_an_empty_replacement(): void
+    {
+        $ruleName = 'Quitar creciente contextual '.Str::uuid();
+
+        Livewire::test(CreateNormalizationRule::class)
+            ->fillForm([
+                'rule_name' => $ruleName,
+                'detected_value' => 'creciente',
+                'replacement_value' => null,
+                'rule_type' => 'description_normalization',
+                'applies_to_field' => 'descripcion_catalogo',
+                'context' => 'marca_homologada=CUARTO CRECIENTE',
+                'priority' => 100,
+                'is_automatic' => false,
+                'requires_preview' => true,
+                'requires_review' => true,
+                'confidence_level' => 'high',
+                'active' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $rule = NormalizationRule::query()->where('rule_name', $ruleName)->firstOrFail();
+
+        $this->assertSame('description_normalization', $rule->rule_type);
+        $this->assertSame('descripcion_catalogo', $rule->applies_to_field);
+        $this->assertNull($rule->replacement_value);
+        $this->assertSame('marca_homologada=CUARTO CRECIENTE', $rule->context);
+    }
+
     public function test_it_creates_brand_normalization_rules(): void
     {
         foreach ([
@@ -277,6 +307,10 @@ class NormalizationRuleResourceTest extends TestCase
         $this->assertArrayHasKey('descripcion_catalogo', NormalizationRuleResource::APPLIES_TO_FIELD_OPTIONS);
         $this->assertArrayHasKey('marca_homologada', NormalizationRuleResource::APPLIES_TO_FIELD_OPTIONS);
         $this->assertArrayHasKey('brand_normalization', NormalizationRuleResource::RULE_TYPE_OPTIONS);
+        $this->assertSame(
+            'Normalización de descripción',
+            NormalizationRuleResource::RULE_TYPE_OPTIONS['description_normalization'],
+        );
         $this->assertArrayHasKey('slash_abbreviation', NormalizationRuleResource::RULE_TYPE_OPTIONS);
 
         Livewire::test(CreateNormalizationRule::class)

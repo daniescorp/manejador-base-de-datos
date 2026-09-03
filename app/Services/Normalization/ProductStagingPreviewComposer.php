@@ -25,6 +25,7 @@ class ProductStagingPreviewComposer
 
     public function __construct(
         private readonly DescriptionRulePattern $descriptionRulePattern,
+        private readonly DescriptionNormalizationRuleApplier $descriptionRuleApplier,
     ) {}
 
     /**
@@ -43,6 +44,7 @@ class ProductStagingPreviewComposer
             $descriptionPreview = $descriptionSource;
             $descriptionIsBlank = blank(trim($descriptionSource));
             $descriptionAppliedIds = [];
+            $descriptionPendingReviewIds = [];
             $descriptionBlockedIds = [];
             $descriptionManualReviewIds = [];
             $descriptionNoChangeIds = [];
@@ -58,6 +60,27 @@ class ProductStagingPreviewComposer
 
                 if ($rule?->rule_type === 'no_change') {
                     $descriptionNoChangeIds[] = $suggestion->getKey();
+
+                    continue;
+                }
+
+                if ($rule?->rule_type === 'description_normalization') {
+                    $evaluation = $this->descriptionRuleApplier->evaluateRule(
+                        $descriptionPreview,
+                        $this->homologatedBrandForContext($stagingRow),
+                        $rule,
+                    );
+
+                    if (! $evaluation['matched']) {
+                        $descriptionBlockedIds[] = $suggestion->getKey();
+                    } elseif ($evaluation['pending_review']) {
+                        $descriptionPendingReviewIds[] = $suggestion->getKey();
+                    } elseif ($evaluation['changed']) {
+                        $descriptionPreview = $evaluation['normalized'];
+                        $descriptionAppliedIds[] = $suggestion->getKey();
+                    } else {
+                        $descriptionBlockedIds[] = $suggestion->getKey();
+                    }
 
                     continue;
                 }
@@ -160,7 +183,7 @@ class ProductStagingPreviewComposer
                         'source' => $descriptionSource,
                         'preview' => $descriptionPreview,
                         'applied_suggestion_ids' => $descriptionAppliedIds,
-                        'pending_review_suggestion_ids' => [],
+                        'pending_review_suggestion_ids' => $descriptionPendingReviewIds,
                         'blocked_suggestion_ids' => $descriptionBlockedIds,
                         'manual_review_suggestion_ids' => $descriptionManualReviewIds,
                         'no_change_suggestion_ids' => $descriptionNoChangeIds,
@@ -180,6 +203,7 @@ class ProductStagingPreviewComposer
                 || $brandIsInvalid
                 || $descriptionBlockedIds !== []
                 || $descriptionManualReviewIds !== []
+                || $descriptionPendingReviewIds !== []
                 || $brandPendingReviewIds !== []
                 || $brandBlockedIds !== [];
             $reviewReason = $stagingRow->review_reason;
@@ -198,7 +222,9 @@ class ProductStagingPreviewComposer
                 );
             }
 
-            if ($descriptionBlockedIds !== [] || $descriptionManualReviewIds !== []) {
+            if ($descriptionBlockedIds !== []
+                || $descriptionManualReviewIds !== []
+                || $descriptionPendingReviewIds !== []) {
                 $reviewReason = $this->appendReviewReason(
                     $reviewReason,
                     'La vista previa contiene sugerencias pendientes de revisión',
@@ -280,14 +306,27 @@ class ProductStagingPreviewComposer
 
     private function isDescriptionRuleApplicable(?NormalizationRule $rule): bool
     {
-        return $rule !== null
-            && $rule->active
-            && filled($rule->detected_value)
-            && filled($rule->replacement_value)
-            && $rule->is_automatic
+        if ($rule === null
+            || ! $rule->active
+            || blank($rule->detected_value)
+            || ($rule->replacement_value === null
+                && $rule->rule_type !== 'description_normalization')) {
+            return false;
+        }
+
+        return $rule->is_automatic
             && ! $rule->requires_review
             && (blank($rule->applies_to_field)
                 || $rule->applies_to_field === self::DESCRIPTION_FIELD);
+    }
+
+    private function homologatedBrandForContext(ProductStagingRow $row): string
+    {
+        $previewBrand = $row->normalized_preview[self::BRAND_FIELD] ?? null;
+
+        return filled($previewBrand)
+            ? (string) $previewBrand
+            : (string) $row->marca_original;
     }
 
     private function isBrandSuggestionApplicable(

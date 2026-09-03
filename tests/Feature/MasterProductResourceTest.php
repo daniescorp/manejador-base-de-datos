@@ -173,6 +173,95 @@ class MasterProductResourceTest extends TestCase
         ]);
     }
 
+    public function test_description_dictionary_action_previews_before_and_after_without_saving(): void
+    {
+        NormalizationRule::query()->update(['active' => false]);
+        $product = $this->masterProduct([
+            'codigo_producto' => '900400',
+            'descripcion_catalogo' => 'Salsa khune yoghurt 250 ml.',
+            'marca_homologada' => 'KUHNE',
+        ]);
+        $this->descriptionRule();
+
+        $component = Livewire::test(
+            ViewMasterProduct::class,
+            ['record' => $product->getRouteKey()],
+        )->assertActionVisible('reanalyzeDescription');
+        $summary = $component->instance()
+            ->getAction('reanalyzeDescription')
+            ->getModalDescription();
+
+        $this->assertStringContainsString('Antes: Salsa khune yoghurt 250 ml.', $summary);
+        $this->assertStringContainsString('Después: Salsa yoghurt 250 ml.', $summary);
+        $this->assertStringContainsString('Quitar KHUNE de descripción - KUHNE', $summary);
+
+        $this->assertSame('Salsa khune yoghurt 250 ml.', $product->fresh()->descripcion_catalogo);
+    }
+
+    public function test_confirming_description_dictionary_action_updates_only_description_and_logs_change(): void
+    {
+        NormalizationRule::query()->update(['active' => false]);
+        $product = $this->masterProduct([
+            'codigo_producto' => '900400',
+            'descripcion_catalogo' => 'Salsa khune yoghurt 250 ml.',
+            'marca_homologada' => 'KUHNE',
+        ]);
+        $rule = $this->descriptionRule();
+        $protected = $product->only([
+            'codigo_producto',
+            'marca_homologada',
+            'uxb_original',
+            'categoria_original',
+            'grupo_original',
+        ]);
+
+        Livewire::test(ViewMasterProduct::class, ['record' => $product->getRouteKey()])
+            ->callAction('reanalyzeDescription')
+            ->assertNotified('Descripción actualizada con el Diccionario.');
+
+        $product->refresh();
+        $this->assertSame('Salsa yoghurt 250 ml.', $product->descripcion_catalogo);
+        $this->assertSame($protected, $product->only(array_keys($protected)));
+        $this->assertDatabaseHas('product_change_logs', [
+            'master_product_id' => $product->getKey(),
+            'changed_by_id' => $this->user->getKey(),
+            'normalization_rule_id' => $rule->getKey(),
+            'source' => 'manual_dictionary',
+            'field_name' => 'descripcion_catalogo',
+            'old_value' => 'Salsa khune yoghurt 250 ml.',
+            'new_value' => 'Salsa yoghurt 250 ml.',
+        ]);
+    }
+
+    public function test_review_required_description_rule_shows_suggestion_and_does_not_update_master(): void
+    {
+        NormalizationRule::query()->update(['active' => false]);
+        $product = $this->masterProduct([
+            'descripcion_catalogo' => 'Salsa khune yoghurt 250 ml.',
+            'marca_homologada' => 'KUHNE',
+        ]);
+        $this->descriptionRule(['requires_review' => true]);
+        $logCount = ProductChangeLog::query()->count();
+
+        $component = Livewire::test(
+            ViewMasterProduct::class,
+            ['record' => $product->getRouteKey()],
+        );
+        $summary = $component->instance()
+            ->getAction('reanalyzeDescription')
+            ->getModalDescription();
+
+        $this->assertStringContainsString('Sin cambios automáticos', $summary);
+        $this->assertStringContainsString('Quitar KHUNE de descripción - KUHNE', $summary);
+
+        $component
+            ->callAction('reanalyzeDescription')
+            ->assertNotified('Sin cambios sugeridos');
+
+        $this->assertSame('Salsa khune yoghurt 250 ml.', $product->fresh()->descripcion_catalogo);
+        $this->assertSame($logCount, ProductChangeLog::query()->count());
+    }
+
     public function test_measurement_exception_action_requires_reason_and_records_the_exception(): void
     {
         $product = $this->masterProduct([
@@ -350,6 +439,25 @@ class MasterProductResourceTest extends TestCase
             'approved_by_id' => $this->user->getKey(),
             'approved_at' => now(),
             'data' => ['marker' => 'master-resource-json-marker'],
+        ], $attributes));
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function descriptionRule(array $attributes = []): NormalizationRule
+    {
+        return NormalizationRule::factory()->create(array_merge([
+            'rule_name' => 'Quitar KHUNE de descripción - KUHNE',
+            'detected_value' => 'KHUNE',
+            'replacement_value' => null,
+            'rule_type' => 'description_normalization',
+            'applies_to_field' => 'descripcion_catalogo',
+            'context' => 'marca_homologada=KUHNE',
+            'priority' => 100,
+            'is_automatic' => true,
+            'requires_preview' => true,
+            'requires_review' => false,
+            'confidence_level' => 'high',
+            'active' => true,
         ], $attributes));
     }
 }
