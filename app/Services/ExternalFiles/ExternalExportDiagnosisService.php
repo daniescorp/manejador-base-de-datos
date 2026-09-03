@@ -56,6 +56,9 @@ class ExternalExportDiagnosisService
         $status = $blockedCount > 0
             ? 'blocked'
             : ($warnings !== [] ? 'review_required' : 'ok');
+        $sectionSummary = $workflow === ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY
+            ? $this->sectionSummary($readResult, $warnings)
+            : [];
 
         return [
             'status' => $status,
@@ -83,6 +86,10 @@ class ExternalExportDiagnosisService
                     'row_number' => $warning['row_number'] ?? null,
                     'original_value' => $warning['original_value'] ?? null,
                     'recommendation' => $warning['recommendation'] ?? null,
+                    'section' => $warning['section'] ?? null,
+                    'detected_blocks' => $warning['detected_blocks'] ?? null,
+                    'origins' => $warning['origins'] ?? null,
+                    'message' => $warning['message'] ?? null,
                 ],
                 $warnings,
             ),
@@ -92,6 +99,7 @@ class ExternalExportDiagnosisService
                 $priceBuild['price_map'],
             ),
             'summary' => $summary,
+            'category_summary' => $sectionSummary,
         ];
     }
 
@@ -122,6 +130,7 @@ class ExternalExportDiagnosisService
                     static fn (array $warning): bool => ($warning['severity'] ?? null) === 'blocked',
                 )) > 0;
                 $prices = $priceMap[$code] ?? [];
+                $badgeValues = $this->badgeValues($data);
 
                 return [
                     'row_number' => $sourceRowNumber,
@@ -132,6 +141,9 @@ class ExternalExportDiagnosisService
                     'price_list' => (string) ($prices['precio_lista'] ?? $data['PRECIOLISTA'] ?? ''),
                     'price_offer' => (string) ($prices['precio_oferta'] ?? $data['PRECIOOFERTA'] ?? ''),
                     'price_strikethrough' => (string) ($prices['precio_tachado'] ?? $data['PRECIOTACHADO'] ?? ''),
+                    'section' => (string) ($envelope['section'] ?? ''),
+                    'has_badge' => $badgeValues !== [],
+                    'badge' => implode(' | ', $badgeValues),
                     'status' => $isBlocked ? 'blocked' : ($rowWarnings !== [] ? 'review_required' : 'ok'),
                     'issues' => array_values(array_unique(array_filter(array_column($rowWarnings, 'issue')))),
                 ];
@@ -267,5 +279,66 @@ class ExternalExportDiagnosisService
             $warnings,
             static fn (array $warning): bool => ($warning['severity'] ?? null) === $severity,
         ));
+    }
+
+    /** @return list<string> */
+    private function badgeValues(array $data): array
+    {
+        $values = [];
+
+        foreach ($data as $header => $value) {
+            $normalized = $this->normalizeField((string) $header);
+
+            if (preg_match('/^cucarda\d*$/', $normalized) === 1 && trim((string) $value) !== '') {
+                $values[] = trim((string) $value);
+            }
+        }
+
+        return array_values(array_unique($values));
+    }
+
+    /**
+     * @param array<string, mixed> $readResult
+     * @param list<array<string, mixed>> $warnings
+     * @return list<array<string, mixed>>
+     */
+    private function sectionSummary(array $readResult, array $warnings): array
+    {
+        $rows = $readResult['rows'] ?? [];
+
+        return array_values(array_map(function (array $section) use ($rows, $warnings): array {
+            $sectionRows = array_values(array_filter(
+                $rows,
+                static fn (array $row): bool => ($row['section_key'] ?? null) === ($section['key'] ?? null),
+            ));
+            $codes = array_values(array_filter(array_map(
+                static fn (array $row): string => trim((string) ($row['data']['CODIGO'] ?? $row['data']['SKU'] ?? '')),
+                $sectionRows,
+            )));
+            $sectionWarnings = array_values(array_filter(
+                $warnings,
+                static fn (array $warning): bool => ($warning['section'] ?? null) === ($section['normalized_section'] ?? null)
+                    || (($warning['code'] ?? null) !== null && in_array((string) $warning['code'], $codes, true)),
+            ));
+            $blocked = (bool) ($section['requires_review'] ?? false)
+                || $this->countWarnings($sectionWarnings, 'blocked') > 0;
+            $review = ! $blocked && $sectionWarnings !== [];
+
+            return [
+                'key' => $section['key'] ?? null,
+                'name' => $section['section'] ?? null,
+                'normalized_name' => $section['normalized_section'] ?? null,
+                'sheet' => $section['sheet'] ?? null,
+                'range' => $section['range'] ?? null,
+                'rows' => count($sectionRows),
+                'status' => $blocked ? 'blocked' : ($review ? 'review_required' : 'ok'),
+                'badge_count' => count(array_filter(
+                    $sectionRows,
+                    fn (array $row): bool => $this->badgeValues($row['data'] ?? []) !== [],
+                )),
+                'warning_count' => count($sectionWarnings),
+                'blocked_count' => $blocked ? max(1, $this->countWarnings($sectionWarnings, 'blocked')) : 0,
+            ];
+        }, $readResult['metadata']['catalog_sections'] ?? []));
     }
 }

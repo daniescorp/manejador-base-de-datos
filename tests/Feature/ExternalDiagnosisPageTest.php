@@ -236,7 +236,10 @@ class ExternalDiagnosisPageTest extends TestCase
             ->call('diagnose')
             ->assertHasNoFormErrors()
             ->assertSet('diagnosis.workflow_type', 'catalog_body')
-            ->assertSee('Exportar TXT')
+            ->assertSee('Resumen por categoría / solapa')
+            ->assertSee('ALMACEN')
+            ->assertSee('Cucardas')
+            ->assertSee('Exportar TXT por categorías')
             ->assertSee('El diagnóstico está OK.');
 
         $this->assertNotNull($capturedPath);
@@ -408,9 +411,20 @@ class ExternalDiagnosisPageTest extends TestCase
                 'price_list' => '',
                 'price_offer' => '529',
                 'price_strikethrough' => '',
+                'has_badge' => true,
+                'badge' => 'cucarda.png',
                 'status' => 'ok',
             ]],
             'summary' => ['product_count' => 1],
+            'category_summary' => $workflow === 'catalog_body' ? [[
+                'name' => 'ALMACEN',
+                'sheet' => 'CATALOGO',
+                'rows' => 1,
+                'status' => 'ok',
+                'badge_count' => 1,
+                'warning_count' => 0,
+                'blocked_count' => 0,
+            ]] : [],
         ];
     }
 

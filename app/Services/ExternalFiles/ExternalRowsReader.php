@@ -120,6 +120,19 @@ class ExternalRowsReader
                 'row_count' => count($rows),
                 'ignored_secondary_block_count' => 0,
                 'duplicate_catalog_sections' => [],
+                'catalog_sections' => $rows === [] ? [] : [[
+                    'key' => 'txt:1',
+                    'section' => $this->textSectionName($filePath),
+                    'normalized_section' => $this->sectionSlug($this->textSectionName($filePath)),
+                    'sheet' => basename($filePath),
+                    'range' => null,
+                    'rows' => count($rows),
+                    'safe_headers' => $headers,
+                    'raw_headers' => $rawHeaders,
+                    'requires_review' => $warnings !== [],
+                    'severity' => $warnings === [] ? null : 'review',
+                    'exportable_automatically' => $warnings === [],
+                ]],
             ],
         ];
     }
@@ -136,50 +149,119 @@ class ExternalRowsReader
         $firstHeaders = null;
         $firstRawHeaders = null;
 
+        $sections = [];
         foreach ($audit['sheets'] as $sheetAudit) {
-            $table = $sheetAudit['first_table'] ?? null;
-
-            if ($table === null) {
-                continue;
-            }
-
             $sheet = $spreadsheet->getSheetByName($sheetAudit['name']);
 
             if ($sheet === null) {
                 continue;
             }
 
-            $rawHeaders = array_map(
-                static fn (array $column): string => (string) $column['header'],
-                $table['columns'],
-            );
-            $headers = $this->safeHeaders($rawHeaders, $workflowType);
-            $firstHeaders ??= $headers;
-            $firstRawHeaders ??= $rawHeaders;
-            $columnCounts[] = count($headers);
+            $tables = $workflowType === ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY
+                ? array_values(array_filter([$sheetAudit['first_table'] ?? null, ...($sheetAudit['secondary_blocks'] ?? [])]))
+                : array_values(array_filter([$sheetAudit['first_table'] ?? null]));
 
-            for ($rowNumber = $table['header_row'] + 1; $rowNumber <= $table['end_row']; $rowNumber++) {
-                $values = [];
-
-                for ($column = 1; $column <= count($headers); $column++) {
-                    $cell = $sheet->getCell([$column, $rowNumber]);
-                    $value = $this->isPriceHeader($headers[$column - 1])
-                        ? $this->formattedPriceValue($cell)
-                        : $this->dataOnlyValue($cell);
-                    $values[] = trim((string) $value);
-                }
-
-                if ($this->isEmptyRow($values)) {
+            foreach ($tables as $table) {
+                if (! ($table['has_code_column'] ?? false)) {
                     continue;
                 }
 
-                $rows[] = $this->rowEnvelope(
-                    $rowNumber,
-                    basename($filePath),
-                    $sheetAudit['name'],
-                    $workflowType,
-                    $this->mapRow($headers, $values),
+                $rawHeaders = array_map(
+                    fn (array $column): string => (string) $this->dataOnlyValue(
+                        $sheet->getCell([(int) $column['index'], (int) $table['header_row']]),
+                    ),
+                    $table['columns'],
                 );
+                $headers = $this->safeHeaders($rawHeaders, $workflowType);
+                $firstHeaders ??= $headers;
+                $firstRawHeaders ??= $rawHeaders;
+                $columnCounts[] = count($headers);
+                $blockRows = [];
+                $activeSectionLabel = null;
+
+                for ($rowNumber = $table['header_row'] + 1; $rowNumber <= $table['end_row']; $rowNumber++) {
+                    $values = [];
+
+                    for ($column = 1; $column <= count($headers); $column++) {
+                        $cell = $sheet->getCell([$column, $rowNumber]);
+                        $value = $this->isPriceHeader($headers[$column - 1])
+                            ? $this->formattedPriceValue($cell)
+                            : $this->dataOnlyValue($cell);
+                        $values[] = trim((string) $value);
+                    }
+
+                    if ($this->isEmptyRow($values)) {
+                        continue;
+                    }
+
+                    $data = $this->mapRow($headers, $values);
+                    $explicitSectionLabel = trim((string) ($data['CATEGORIA'] ?? $data['SOLAPA'] ?? ''));
+
+                    if ($explicitSectionLabel !== '') {
+                        $activeSectionLabel = $explicitSectionLabel;
+                    }
+
+                    $blockRows[] = [
+                        'row_number' => $rowNumber,
+                        'data' => $data,
+                        'detected_section' => $activeSectionLabel,
+                    ];
+                }
+
+                $labels = array_values(array_unique(array_filter(array_map(
+                    static fn (array $row): string => trim((string) ($row['detected_section'] ?? '')),
+                    $blockRows,
+                ))));
+                if ($labels === []) {
+                    $labels = [(string) $sheetAudit['name']];
+                }
+
+                foreach ($labels as $label) {
+                    $normalizedSection = $this->sectionSlug($label);
+                    $auditSection = collect($audit['catalog_sections'] ?? [])->first(
+                        static fn (array $candidate): bool => ($candidate['sheet'] ?? null) === $sheetAudit['name']
+                            && ($candidate['range'] ?? null) === ($table['range'] ?? null)
+                            && ($candidate['normalized_section'] ?? null) === $normalizedSection,
+                    );
+                    $sectionKey = $sheetAudit['name'].':'.($table['range'] ?? '').':'.$normalizedSection;
+                    $sectionRows = array_values(array_filter(
+                        $blockRows,
+                        static function (array $row) use ($labels, $label): bool {
+                            if (count($labels) === 1) {
+                                return true;
+                            }
+
+                            return ($row['detected_section'] ?? $labels[0]) === $label;
+                        },
+                    ));
+
+                    foreach ($sectionRows as $row) {
+                        $rows[] = $this->rowEnvelope(
+                            $row['row_number'],
+                            basename($filePath),
+                            $sheetAudit['name'],
+                            $workflowType,
+                            $row['data'],
+                            $sectionKey,
+                            $label,
+                        );
+                    }
+
+                    $sections[] = [
+                        'key' => $sectionKey,
+                        'section' => $label,
+                        'normalized_section' => $normalizedSection,
+                        'sheet' => (string) $sheetAudit['name'],
+                        'range' => $table['range'] ?? null,
+                        'rows' => count($sectionRows),
+                        'safe_headers' => $headers,
+                        'raw_headers' => $rawHeaders,
+                        'requires_review' => (bool) ($auditSection['requires_review'] ?? false),
+                        'severity' => $auditSection['severity'] ?? null,
+                        'problem' => $auditSection['problem'] ?? null,
+                        'exportable_automatically' => (bool) ($auditSection['exportable_automatically'] ?? false),
+                    ];
+                }
             }
         }
 
@@ -221,8 +303,11 @@ class ExternalRowsReader
                 'row_count' => count($rows),
                 'sheet_count' => $audit['sheet_count'],
                 'sheets_read' => array_values(array_unique(array_column($rows, 'source_sheet'))),
-                'ignored_secondary_block_count' => count($audit['secondary_blocks']),
+                'ignored_secondary_block_count' => $workflowType === ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY
+                    ? 0
+                    : count($audit['secondary_blocks']),
                 'duplicate_catalog_sections' => $duplicateSections,
+                'catalog_sections' => $sections,
             ],
         ];
     }
@@ -252,6 +337,7 @@ class ExternalRowsReader
                 'row_count' => 0,
                 'ignored_secondary_block_count' => 0,
                 'duplicate_catalog_sections' => [],
+                'catalog_sections' => [],
             ],
         ];
     }
@@ -288,6 +374,7 @@ class ExternalRowsReader
             'codigo' => 'CODIGO',
             'sku' => 'SKU',
             'categoria' => 'CATEGORIA',
+            'solapa' => 'SOLAPA',
             'grupo' => 'GRUPO',
             'marca' => 'MARCA',
             'descripcion' => 'DESCRIPCION',
@@ -295,6 +382,7 @@ class ExternalRowsReader
             'preciolista' => 'PRECIOLISTA',
             'preciooferta' => 'PRECIOOFERTA',
             'preciotachado' => 'PRECIOTACHADO',
+            'cucarda' => 'CUCARDA',
             'precio' => $workflowType === ExternalFormatSamplesAuditService::WORKFLOW_PROMO_TAPA
                 ? 'PRECIOOFERTA'
                 : 'PRECIOLISTA',
@@ -321,14 +409,45 @@ class ExternalRowsReader
         ?string $sourceSheet,
         string $workflowType,
         array $data,
+        ?string $sectionKey = null,
+        ?string $section = null,
     ): array {
         return [
             'row_number' => $rowNumber,
             'source_file' => $sourceFile,
             'source_sheet' => $sourceSheet,
             'workflow_type' => $workflowType,
+            'section_key' => $sectionKey ?? 'txt:1',
+            'section' => $section ?? $this->textSectionName($sourceFile),
             'data' => $data,
         ];
+    }
+
+    private function textSectionName(string $filePath): string
+    {
+        $name = pathinfo(basename($filePath), PATHINFO_FILENAME);
+        $name = preg_replace('/^[0-9a-f-]{36}-/i', '', $name) ?? $name;
+        $name = preg_replace('/[\s-]+(?:INT|INTERIOR)$/iu', '', trim($name)) ?? trim($name);
+
+        return $name !== '' ? $name : 'catalogo';
+    }
+
+    private function sectionSlug(string $section): string
+    {
+        $normalized = mb_strtolower(Str::ascii(trim($section)), 'UTF-8');
+        $normalized = preg_replace('/\.(?:xlsx?|txt)$/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/[^a-z0-9]+/u', ' ', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+(?:int|interior)$/u', '', trim($normalized)) ?? trim($normalized);
+        $normalized = preg_replace('/\s+/u', ' ', trim($normalized)) ?? trim($normalized);
+
+        return match ($normalized) {
+            'almacen', 'alimentos' => 'almacen',
+            'bebidas con al', 'bebidas c alcohol', 'bebidas con alcohol' => 'bebidas_con_al',
+            'bebidas sin al', 'bebidas s alcohol', 'bebidas sin alcohol' => 'bebidas_sin_al',
+            'gastro', 'gastronomia' => 'gastro',
+            'non food', 'nonfood' => 'non_food',
+            default => str_replace(' ', '_', $normalized),
+        };
     }
 
     private function isEmptyRow(array $values): bool

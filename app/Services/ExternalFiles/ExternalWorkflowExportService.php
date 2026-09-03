@@ -2,6 +2,7 @@
 
 namespace App\Services\ExternalFiles;
 
+use App\Services\Audits\ExternalFormatSamplesAuditService;
 use DomainException;
 use Illuminate\Support\Str;
 
@@ -16,6 +17,7 @@ class ExternalWorkflowExportService
         private readonly ExternalRowsReader $rowsReader,
         private readonly ExternalPriceFormatter $priceFormatter,
         private readonly ExternalDescriptionFormatter $descriptionFormatter,
+        private readonly ExternalCatalogSectionExportService $catalogSectionExportService,
     ) {}
 
     /**
@@ -23,6 +25,10 @@ class ExternalWorkflowExportService
      */
     public function export(string $filePath, string $workflow): array
     {
+        if ($workflow === ExternalFormatSamplesAuditService::WORKFLOW_CATALOG_BODY) {
+            return $this->catalogSectionExportService->export($filePath);
+        }
+
         $diagnosis = $this->diagnosisService->diagnose($filePath, $workflow);
 
         if (($diagnosis['status'] ?? null) !== 'ok') {

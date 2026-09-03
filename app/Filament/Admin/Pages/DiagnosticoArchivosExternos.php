@@ -180,7 +180,9 @@ class DiagnosticoArchivosExternos extends Page
 
             File::ensureDirectoryExists($this->temporarySourceDirectory());
             $this->pruneExpiredTemporarySources();
-            $this->sourceToken = Str::uuid().'.'.$extension;
+            $sourceBaseName = Str::slug(pathinfo($uploadedFile->getClientOriginalName(), PATHINFO_FILENAME));
+            $sourceBaseName = $sourceBaseName !== '' ? $sourceBaseName : 'archivo';
+            $this->sourceToken = Str::uuid().'-'.$sourceBaseName.'.'.$extension;
             $sourcePath = $this->temporarySourceDirectory().DIRECTORY_SEPARATOR.$this->sourceToken;
 
             if (! File::copy($uploadedPath, $sourcePath)) {
@@ -279,11 +281,18 @@ class DiagnosticoArchivosExternos extends Page
 
         try {
             $export = $exportService->export($sourcePath, $this->workflow());
-            $fileName = $this->exportFilePrefix().'-exportado-'.now()->format('Ymd-His').'.txt';
+            $isCatalogPackage = $this->workflow() === 'catalog_body';
+            $fileName = ($export['format'] ?? 'txt') === 'zip'
+                ? 'catalogo-txt-categorias-'.now()->format('Ymd-His').'.zip'
+                : ($isCatalogPackage
+                    ? (string) ($export['file_name'] ?? 'catalogo-exportado-'.now()->format('Ymd-His').'.txt')
+                    : $this->exportFilePrefix().'-exportado-'.now()->format('Ymd-His').'.txt');
 
             Notification::make()
-                ->title('TXT generado correctamente')
-                ->body('La descarga conserva las filas y columnas del archivo diagnosticado.')
+                ->title(($export['format'] ?? 'txt') === 'zip' ? 'ZIP generado correctamente' : 'TXT generado correctamente')
+                ->body($isCatalogPackage
+                    ? 'La descarga conserva cada categoría por separado, con sus filas y columnas originales.'
+                    : 'La descarga conserva las filas y columnas del archivo diagnosticado.')
                 ->success()
                 ->send();
 
@@ -292,7 +301,7 @@ class DiagnosticoArchivosExternos extends Page
                     echo $export['content'];
                 },
                 $fileName,
-                ['Content-Type' => 'text/plain; charset=UTF-8'],
+                ['Content-Type' => $export['mime_type'] ?? 'text/plain; charset=UTF-8'],
             );
         } catch (Throwable $exception) {
             Notification::make()
@@ -348,7 +357,7 @@ class DiagnosticoArchivosExternos extends Page
     private function temporarySourcePath(): ?string
     {
         if ($this->sourceToken === null
-            || preg_match('/\A[0-9a-f-]{36}\.(?:txt|xlsx)\z/', $this->sourceToken) !== 1) {
+            || preg_match('/\A[0-9a-f-]{36}-[a-z0-9-]+\.(?:txt|xlsx)\z/', $this->sourceToken) !== 1) {
             return null;
         }
 

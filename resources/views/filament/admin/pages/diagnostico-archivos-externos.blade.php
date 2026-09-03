@@ -134,6 +134,45 @@
             </section>
         @endif
 
+        @if ($this->workflowType() === 'catalog_body' && ($diagnosis['category_summary'] ?? []) !== [])
+            <section class="diagnosis-panel" aria-labelledby="diagnosis-categories-heading">
+                <div class="diagnosis-section-heading">
+                    <div>
+                        <h2 id="diagnosis-categories-heading">Resumen por categoría / solapa</h2>
+                        <p>Cada categoría se conserva como una salida independiente.</p>
+                    </div>
+                </div>
+                <div class="diagnosis-table-wrap">
+                    <table class="diagnosis-table">
+                        <thead><tr>
+                            <th>Categoría / solapa</th><th>Hoja origen</th><th>Filas</th><th>Estado</th>
+                            <th>Cucardas</th><th>Warnings</th><th>Bloqueos</th>
+                        </tr></thead>
+                        <tbody>
+                            @foreach ($diagnosis['category_summary'] as $category)
+                                <tr>
+                                    <td><strong>{{ $this->displayDiagnosticValue($category['name'] ?? null) }}</strong></td>
+                                    <td>{{ $this->displayDiagnosticValue($category['sheet'] ?? null) }}</td>
+                                    <td>{{ $category['rows'] ?? 0 }}</td>
+                                    <td><span @class([
+                                        'process-status',
+                                        'process-status-ok' => ($category['status'] ?? null) === 'ok',
+                                        'process-status-review' => ($category['status'] ?? null) === 'review_required',
+                                        'process-status-blocked' => ($category['status'] ?? null) === 'blocked',
+                                    ])>{{ match ($category['status'] ?? null) {
+                                        'ok' => 'OK', 'review_required' => 'Revisión', 'blocked' => 'Bloqueado', default => '—',
+                                    } }}</span></td>
+                                    <td>{{ $category['badge_count'] ?? 0 }}</td>
+                                    <td>{{ $category['warning_count'] ?? 0 }}</td>
+                                    <td>{{ $category['blocked_count'] ?? 0 }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        @endif
+
         <section class="diagnosis-panel" aria-labelledby="diagnosis-warnings-heading">
             <div class="diagnosis-section-heading">
                 <div>
@@ -204,6 +243,7 @@
                             <th>PRECIOLISTA</th>
                             <th>PRECIOOFERTA</th>
                             <th>PRECIOTACHADO</th>
+                            <th>Cucarda</th>
                             <th>Estado</th>
                         </tr>
                     </thead>
@@ -217,6 +257,14 @@
                                 <td>{{ $this->displayDiagnosticValue($row['price_list'] ?? null) }}</td>
                                 <td>{{ $this->displayDiagnosticValue($row['price_offer'] ?? null) }}</td>
                                 <td>{{ $this->displayDiagnosticValue($row['price_strikethrough'] ?? null) }}</td>
+                                <td>
+                                    @if ($row['has_badge'] ?? false)
+                                        <strong>Sí</strong>
+                                        <div>{{ $this->displayDiagnosticValue($row['badge'] ?? null) }}</div>
+                                    @else
+                                        No
+                                    @endif
+                                </td>
                                 <td>
                                     <span @class([
                                         'process-status',
@@ -238,7 +286,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8">No hay filas para previsualizar.</td>
+                                <td colspan="9">No hay filas para previsualizar.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -252,11 +300,15 @@
                 <h2 id="diagnosis-export-heading">Exportar</h2>
 
                 @if ($status === 'blocked')
-                    <p>La exportación está bloqueada. Corrija los errores críticos antes de exportar.</p>
+                    <p>{{ $this->workflowType() === 'catalog_body'
+                        ? 'Existen categorías con bloqueos. Resuelva los bloqueos antes de exportar el paquete completo.'
+                        : 'La exportación está bloqueada. Corrija los errores críticos antes de exportar.' }}</p>
                 @elseif ($status === 'review_required')
                     <p>Hay advertencias que deben revisarse antes de exportar.</p>
                 @else
-                    <p>El diagnóstico está OK. El TXT se generará sin modificar el archivo original ni guardar datos en la base.</p>
+                    <p>{{ $this->workflowType() === 'catalog_body'
+                        ? 'El diagnóstico está OK. Se generará un TXT por categoría; si hay varias, se descargará un ZIP.'
+                        : 'El diagnóstico está OK. El TXT se generará sin modificar el archivo original ni guardar datos en la base.' }}</p>
                 @endif
             </div>
 
@@ -268,7 +320,7 @@
                 wire:target="exportTxt"
                 :disabled="$status !== 'ok'"
             >
-                Exportar TXT
+                {{ $this->workflowType() === 'catalog_body' ? 'Exportar TXT por categorías' : 'Exportar TXT' }}
             </x-filament::button>
         </section>
     @else
